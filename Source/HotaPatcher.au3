@@ -13,9 +13,9 @@
 
 #ce ----------------------------------------------------------------------------
 
-#pragma compile(Out, ..\Release\HotaPatcher.exe)
+#pragma compile(Out, ..\Release\HotAPatcher.exe)
 #pragma compile(Icon, Assets\Game.ico)
-#pragma compile(ProductName, HotaPatcher)
+#pragma compile(ProductName, HotAPatcher)
 #pragma compile(FileDescription, Патчер для Heroes 3 HotA)
 #pragma compile(FileVersion, 1.0.0.0)
 #pragma compile(LegalCopyright, )
@@ -32,7 +32,7 @@
 #include <WindowsConstants.au3>
 #include "PatchData.au3"
 
-Global Const $g_sTitle = "HotaPatcher 1.0"
+Global Const $g_sTitle = "HotAPatcher 1.0"
 
 ; названия патчей: ими подписаны галочки, ими же помечаются сообщения
 Global Const $g_sPopupName = "Не показывать это окно при создании новой игры"
@@ -127,7 +127,7 @@ Func BuildGui()
 	Local $idIcon = GUICtrlCreatePic("", $g_iMargin, 15, 32, 32)
 	$g_ahBitmaps[0] = LoadPicture($idIcon, "Icon.png")
 
-	Local $idTitle = GUICtrlCreateLabel("Патчи для Heroes 3 HotA", $g_iMargin + 42, 13, 344, 24)
+	Local $idTitle = GUICtrlCreateLabel("Патчер для Heroes 3: Horn of the Abyss", $g_iMargin + 42, 13, 344, 24)
 	GUICtrlSetFont($idTitle, 12, 600, 0, "Segoe UI")
 	GUICtrlSetColor($idTitle, $g_iColorText)
 	GUICtrlSetBkColor($idTitle, $g_iColorBg)
