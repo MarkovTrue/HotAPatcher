@@ -1,0 +1,11 @@
+CLAUDE.md
+.claudeignore
+.claude/
+.vscode/
+
+# сборка и локальные настройки
+Release/
+Tools/
+Docs/
+*.ini
+__pycache__/
