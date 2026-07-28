@@ -252,7 +252,8 @@ Func LoadPicture($idPic, $sName)
 	Local $hImage = _GDIPlus_ImageLoadFromFile($sPath)
 	Local $hBitmap = 0
 	If $hImage Then
-		$hBitmap = _GDIPlus_BitmapCreateHBITMAPFromBitmap($hImage)
+		; альфа-канал PNG блендим в цвет фона окна, иначе GDI+ зальёт его чёрным
+		$hBitmap = _GDIPlus_BitmapCreateHBITMAPFromBitmap($hImage, BitOR(0xFF000000, $g_iColorBg))
 		_GDIPlus_ImageDispose($hImage)
 	EndIf
 	FileDelete($sPath)
@@ -284,11 +285,12 @@ Func DetectGameDir()
 EndFunc   ;==>DetectGameDir
 
 Func RegistryGameDir()
+	; обе разрядности: HKLM64 для x86-процесса, WOW6432Node для x64-процесса
 	Local $aRoots[4] = [ _
 			"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", _
 			"HKLM64\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", _
-			"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", _
-			"HKCU64\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"]
+			"HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall", _
+			"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"]
 
 	For $i = 0 To UBound($aRoots) - 1
 		Local $iIndex = 1
