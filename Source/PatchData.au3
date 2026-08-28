@@ -3,13 +3,13 @@
 	Данные патчей. Файл сгенерирован скриптом Tools\make_patchdata.py,
 	править вручную не нужно.
 
-	Собран для: HotA 1.8.0 + HD mod 5.7 R33.
+	Собран для HotA 1.8.0, но к версии не привязан: врезки и адреса игры
+	патчер ищет сам, а код секции переносит по таблицам правок.
 
 #ce ----------------------------------------------------------------------------
 
-; куда должна лечь секция с кодом (проверяется после её добавления)
+; адрес, под который собран код секции exe: от него считаются правки ниже
 Global Const $g_iExeSectionRva = 0X2E7000
-Global Const $g_iDllSectionRva = 0X11F7000
 
 ; код, который пишется в секцию exe
 Global Const $g_sExeCode = _
@@ -61,19 +61,50 @@ Global Const $g_sExeCode = _
 		"DCFDFFFF833D88706E0000750DC70584706E0000000000EB01585589E583EC2C" & _
 		"E9A1C5E9FF"
 
-; врезки в exe: адрес, исходные байты, новые байты
-Global Const $g_aExeHooks[2][3] = [ _
-		["0X58ECC0", "5F5E5B8BE5", "E93B881500"], _
-		["0X583B60", "558BEC83EC2C", "E91B3A160090"]]
+; абсолютные ссылки внутрь самой секции: патчер прибавляет к ним сдвиг секции
+Global Const $g_aExeSecRefs[27] = [0X103, 0X11E, 0X132, 0X139, 0X14D, 0X15A, 0X170, 0X296, 0X29F, 0X2B2, 0X2BB, 0X2C6, 0X2E4, 0X301, 0X315, 0X31C, 0X386, 0X3A0, 0X3DE, 0X3F1, 0X3FF, 0X412, 0X43C, 0X509, 0X582, 0X5A6, 0X5AF]
 
-; врезка в HD_HOTA.dll: смещение в файле и исходные байты
-Global Const $g_iDllHookOffset = 0X18AA3C
-Global Const $g_sDllHookOrig = "E8CF9FFFFF"
+; абсолютные адреса игры: смещение в коде и что туда положить
+Global Const $g_aExeGameRefs[8][2] = [ _
+		[0X124, "CreateFileA"], _
+		[0X140, "ReadFile"], _
+		[0X147, "CloseHandle"], _
+		[0X307, "CreateFileA"], _
+		[0X323, "WriteFile"], _
+		[0X32A, "CloseHandle"], _
+		[0X3BA, "ScenarioPtr"], _
+		[0X58B, "ScenarioPtr"]]
 
-; что писать в точку врезки dll
-Global Const $g_sDllJumpStub = "E9BFB9060190"   ; переход на заглушку в новой секции
-Global Const $g_sDllJumpSkip = "E99D00000090"   ; сразу мимо окна, без заглушки
+; переходы из секции обратно в игру: смещение, врезка и добавка к её адресу
+Global Const $g_aExeRelRefs[2][3] = [ _
+		[0X517, "FILLED", 5], _
+		[0X5C1, "DRAW", 6]]
 
-; заглушки для новой секции dll
-Global Const $g_sDllStubBoth = "6089D9B880726E00FFD061E9CE46F9FE"    ; сохранение и пропуск окна
-Global Const $g_sDllStubTowns = "6089D9B880726E00FFD061E800E6F8FEE92D46F9FE"  ; только сохранение
+; врезки в exe: имя, сигнатура кода вокруг (?? - любой байт),
+; положение врезки в сигнатуре, её длина и смещение обработчика в секции
+Global Const $g_aExeHooks[2][5] = [ _
+		["FILLED", "8955088945F4897DF80F8C????????5F5E5B8BE55DC20400", 15, 5, 0X500], _
+		["DRAW", "558BEC83EC2C538BD9895DE48A4365", 0, 6, 0X580]]
+
+; указатель на сценарий читается из инструкции внутри этой сигнатуры
+Global Const $g_sScenarioSig = "8955088955F4897DF88B35????????8A8416D0F60100"
+Global Const $g_iScenarioAt = 11
+
+; функции kernel32, чьи ячейки импорта нужны коду секции
+Global Const $g_aExeImports[4] = ["CreateFileA", "ReadFile", "WriteFile", "CloseHandle"]
+
+; врезка в HD_HOTA.dll ищется по сигнатуре вокруг вытесняемого вызова:
+;   84 C0                 test al, al
+;   0F 85 xx xx xx xx     jne <штатная ветка «стартовать без окна»>
+;   E8 xx xx xx xx        call <подготовка окна>, сюда и врезаемся
+;   8D 85 E8 FD FF FF     lea eax, [ebp - 0x218]
+; шаг допускает E8 и E9, поэтому пропатченный файл опознаётся тем же поиском
+Global Const $g_sDllSigHead = "84C00F85"
+Global Const $g_sDllSigTail = "8D85E8FDFFFF"
+Global Const $g_sDllSigStep = "E8E9"
+
+; заглушка dll: между головой и хвостом патчер вставляет адрес процедуры
+; сохранения, она лежит в секции exe по этому смещению
+Global Const $g_sDllStubHead = "6089D9B8"
+Global Const $g_sDllStubTail = "FFD061"
+Global Const $g_iExeSaveProc = 0X280
