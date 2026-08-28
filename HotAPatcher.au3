@@ -13,11 +13,11 @@
 
 #ce ----------------------------------------------------------------------------
 
-#pragma compile(Out, ..\Release\HotAPatcher.exe)
+#pragma compile(Out, #Build\HotAPatcher.exe)
 #pragma compile(Icon, Assets\Game.ico)
 #pragma compile(ProductName, HotAPatcher)
 #pragma compile(FileDescription, Патчер для Heroes 3 HotA)
-#pragma compile(FileVersion, 1.0.1.0)
+#pragma compile(FileVersion, 1.01.0.0)
 #pragma compile(LegalCopyright, )
 #pragma compile(x64, false)
 

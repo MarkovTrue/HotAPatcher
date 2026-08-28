@@ -4,8 +4,7 @@ CLAUDE.md
 .vscode/
 
 # сборка и локальные настройки
-Release/
+/#Archive/
+/#Build/
 Tools/
 Docs/
-*.ini
-__pycache__/

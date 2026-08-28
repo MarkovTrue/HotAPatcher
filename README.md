@@ -1,8 +1,8 @@
-# <img src="Source/Assets/Icon.png" alt="Logo" width="23" height="22"/>&nbsp;HotAPatcher
+# <img src="Assets/Icon.png" alt="Logo" width="23" height="22"/>&nbsp;HotAPatcher
 
 Утилита патчит игру [Heroes 3: Horn of the Abyss](https://h3hota.com), чтобы уменьшить рутину при запуске новой сессии.
 
-![Preview](Source/Assets/Preview.png)
+![Preview](Assets/Preview.png)
 
 ## Описание
 
