@@ -9,10 +9,10 @@
 #ce ----------------------------------------------------------------------------
 
 ; адрес, под который собран код секции exe: от него считаются правки ниже
-Global Const $g_iExeSectionRva = 0X2E7000
+Global Const $gc_iExeSectionRva = 0X2E7000
 
 ; код, который пишется в секцию exe
-Global Const $g_sExeCode = _
+Global Const $gc_sExeCode = _
 		"486F74415F506174636865722E64617400000000000000000000000000000000" & _
 		"0000000000000000000000000000000000000000000000000000000000000000" & _
 		"0000000000000000000000000000000000000000000000000000000000000000" & _
@@ -33,7 +33,7 @@ Global Const $g_sExeCode = _
 		"14000058C3000000000000000000000000000000000000000000000000000000" & _
 		"0000000000000000000000000000000000000000000000000000000000000000" & _
 		"0000000000000000000000000000000000000000000000000000000000000000" & _
-		"609C89CD31F6E875FFFFFF8B5F2483FB0A7709891CB520706E00EB0BC704B520" & _
+		"609C89CD31F6E875FFFFFF8B5F2483FB0B7709891CB520706E00EB0BC704B520" & _
 		"706E00FFFFFFFF8B5F6C83FB027709891CB560706E00EB0BC704B560706E0003" & _
 		"000000C704B540706E00FFFFFFFF8B5F2083FB007C128B4F2839CB730B8B449F" & _
 		"2C8904B540706E004683FE087C986A0068800000006A026A006A006800000040" & _
@@ -42,7 +42,7 @@ Global Const $g_sExeCode = _
 		"0000000000000000000000000000000000000000000000000000000000000000" & _
 		"0000000000000000000000000000000000000000000000000000000000000000" & _
 		"609C89CDC70588706E000000000031F6E86BFEFFFF8B5F2483FBFF75498B1CB5" & _
-		"20706E0083FBFF743D83FB0A773889F2C1E20401F2C1E2020315389569000FB7" & _
+		"20706E0083FBFF743D83FB0B773889F2C1E20401F2C1E2020315389569000FB7" & _
 		"9214F9010089D9B801000000D3E085C27414895F24C74720FFFFFFFFC7058870" & _
 		"6E00010000008B5F6C83FB0375198B1CB560706E0083FB02770D895F6CC70588" & _
 		"706E00010000008B5F2083FBFF75358B04B540706E0083F8FF74298B4F2883F9" & _
@@ -62,10 +62,10 @@ Global Const $g_sExeCode = _
 		"E9A1C5E9FF"
 
 ; абсолютные ссылки внутрь самой секции: патчер прибавляет к ним сдвиг секции
-Global Const $g_aExeSecRefs[27] = [0X103, 0X11E, 0X132, 0X139, 0X14D, 0X15A, 0X170, 0X296, 0X29F, 0X2B2, 0X2BB, 0X2C6, 0X2E4, 0X301, 0X315, 0X31C, 0X386, 0X3A0, 0X3DE, 0X3F1, 0X3FF, 0X412, 0X43C, 0X509, 0X582, 0X5A6, 0X5AF]
+Global Const $gc_aExeSecRefs[27] = [0X103, 0X11E, 0X132, 0X139, 0X14D, 0X15A, 0X170, 0X296, 0X29F, 0X2B2, 0X2BB, 0X2C6, 0X2E4, 0X301, 0X315, 0X31C, 0X386, 0X3A0, 0X3DE, 0X3F1, 0X3FF, 0X412, 0X43C, 0X509, 0X582, 0X5A6, 0X5AF]
 
 ; абсолютные адреса игры: смещение в коде и что туда положить
-Global Const $g_aExeGameRefs[8][2] = [ _
+Global Const $gc_aExeGameRefs[8][2] = [ _
 		[0X124, "CreateFileA"], _
 		[0X140, "ReadFile"], _
 		[0X147, "CloseHandle"], _
@@ -76,22 +76,22 @@ Global Const $g_aExeGameRefs[8][2] = [ _
 		[0X58B, "ScenarioPtr"]]
 
 ; переходы из секции обратно в игру: смещение, врезка и добавка к её адресу
-Global Const $g_aExeRelRefs[2][3] = [ _
+Global Const $gc_aExeRelRefs[2][3] = [ _
 		[0X517, "FILLED", 5], _
 		[0X5C1, "DRAW", 6]]
 
 ; врезки в exe: имя, сигнатура кода вокруг (?? - любой байт),
 ; положение врезки в сигнатуре, её длина и смещение обработчика в секции
-Global Const $g_aExeHooks[2][5] = [ _
+Global Const $gc_aExeHooks[2][5] = [ _
 		["FILLED", "8955088945F4897DF80F8C????????5F5E5B8BE55DC20400", 15, 5, 0X500], _
 		["DRAW", "558BEC83EC2C538BD9895DE48A4365", 0, 6, 0X580]]
 
 ; указатель на сценарий читается из инструкции внутри этой сигнатуры
-Global Const $g_sScenarioSig = "8955088955F4897DF88B35????????8A8416D0F60100"
-Global Const $g_iScenarioAt = 11
+Global Const $gc_sScenarioSig = "8955088955F4897DF88B35????????8A8416D0F60100"
+Global Const $gc_iScenarioAt = 11
 
 ; функции kernel32, чьи ячейки импорта нужны коду секции
-Global Const $g_aExeImports[4] = ["CreateFileA", "ReadFile", "WriteFile", "CloseHandle"]
+Global Const $gc_aExeImports[4] = ["CreateFileA", "ReadFile", "WriteFile", "CloseHandle"]
 
 ; врезка в HD_HOTA.dll ищется по сигнатуре вокруг вытесняемого вызова:
 ;   84 C0                 test al, al
@@ -99,12 +99,12 @@ Global Const $g_aExeImports[4] = ["CreateFileA", "ReadFile", "WriteFile", "Close
 ;   E8 xx xx xx xx        call <подготовка окна>, сюда и врезаемся
 ;   8D 85 E8 FD FF FF     lea eax, [ebp - 0x218]
 ; шаг допускает E8 и E9, поэтому пропатченный файл опознаётся тем же поиском
-Global Const $g_sDllSigHead = "84C00F85"
-Global Const $g_sDllSigTail = "8D85E8FDFFFF"
-Global Const $g_sDllSigStep = "E8E9"
+Global Const $gc_sDllSigHead = "84C00F85"
+Global Const $gc_sDllSigTail = "8D85E8FDFFFF"
+Global Const $gc_sDllSigStep = "E8E9"
 
 ; заглушка dll: между головой и хвостом патчер вставляет адрес процедуры
 ; сохранения, она лежит в секции exe по этому смещению
-Global Const $g_sDllStubHead = "6089D9B8"
-Global Const $g_sDllStubTail = "FFD061"
-Global Const $g_iExeSaveProc = 0X280
+Global Const $gc_sDllStubHead = "6089D9B8"
+Global Const $gc_sDllStubTail = "FFD061"
+Global Const $gc_iExeSaveProc = 0X280
