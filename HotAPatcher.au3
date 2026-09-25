@@ -14,7 +14,7 @@
 #ce ----------------------------------------------------------------------------
 
 #pragma compile(Out, #Build\HotAPatcher.exe)
-#pragma compile(Icon, Assets\Game.ico)
+#pragma compile(Icon, Assets\Icons\Icon.ico)
 #pragma compile(ProductName, HotAPatcher)
 #pragma compile(FileDescription, Патчер для Heroes 3 HotA)
 #pragma compile(FileVersion, 1.0.2.0)
@@ -280,7 +280,7 @@ EndFunc   ;==>_Backdrop
 
 Func _SetWindowIcon()
 	Local $sIco = @TempDir & "\HotaPatcher_game.ico"
-	FileInstall("Assets\Game.ico", $sIco, $FC_OVERWRITE)
+	FileInstall("Assets\Icons\Icon.ico", $sIco, $FC_OVERWRITE)
 	If FileExists($sIco) Then GUISetIcon($sIco, 0, $g_hGui)
 EndFunc   ;==>_SetWindowIcon
 
@@ -291,7 +291,7 @@ Func _LoadPicture($idPic, $sName)
 	Local $sPath = @TempDir & "\HotaPatcher_" & $sName
 	Switch $sName
 		Case "Icon.png"
-			FileInstall("Assets\Icon.png", $sPath, $FC_OVERWRITE)
+			FileInstall("Assets\Icons\Icon.png", $sPath, $FC_OVERWRITE)
 		Case "Popup.png"
 			FileInstall("Assets\Popup.png", $sPath, $FC_OVERWRITE)
 		Case "Towns.png"

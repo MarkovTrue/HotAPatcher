@@ -7,4 +7,6 @@ CLAUDE.md
 /#Archive/
 /#Build/
 Tools/
+Preview/BuildPreview.ps1
+Preview/BuildHeaderIcon.py
 Docs/
