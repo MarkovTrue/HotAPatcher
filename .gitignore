@@ -10,6 +10,7 @@ Tools/
 Preview/BuildPreview.ps1
 Preview/BuildAnimation.py
 Preview/BuildHeaderIcon.py
+Preview/PreviewStates.au3
 Docs/
 
 # генератор Marks.gif и наброски подсветки
