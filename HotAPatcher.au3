@@ -1,31 +1,36 @@
-﻿#cs ----------------------------------------------------------------------------
-
-	Патчер для Heroes 3: Horn of the Abyss (HotA 1.8.0 + HD mod 5.7 R33)
-
-	Патч 1. Убирает окно «Турнирные правила», которое HD-мод показывает
-	при каждом нажатии «Начать».
-
-	Патч 2. Запоминает выбранные стартовые город, героя и бонус всех игроков
-	и подставляет их на следующей случайной карте.
-
-	Оба патча трогают только файлы игры и полностью откатываются
-	восстановлением резервных копий, которые патчер делает сам.
-
-#ce ----------------------------------------------------------------------------
+﻿; ============================================================
+; Патчер для Heroes 3: Horn of the Abyss, HotA 1.8.1 + HD mod 5.8
+;
+; Патч 1. Убирает окно «Турнирные правила», которое HD-мод показывает
+; при каждом нажатии «Начать».
+;
+; Патч 2. Запоминает выбранные стартовые город, героя и бонус всех игроков
+; и подставляет их на следующей случайной карте.
+;
+; Патч 3. Подсвечивает на карте несобранные мельницы, водяные колёса,
+; сады и склады: над ними поднимаются искры цвета ресурса.
+;
+; Все патчи трогают только файлы игры и полностью откатываются
+; восстановлением резервных копий, которые патчер делает сам.
+; ============================================================
 
 #pragma compile(Out, #Build\HotAPatcher.exe)
 #pragma compile(Icon, Assets\Icons\Icon.ico)
 #pragma compile(ProductName, HotAPatcher)
 #pragma compile(FileDescription, Патчер для Heroes 3 HotA)
-#pragma compile(FileVersion, 1.0.2.0)
+#pragma compile(ProductVersion, 1.03)
+#pragma compile(FileVersion, 1.03)
 #pragma compile(LegalCopyright, )
 #pragma compile(x64, false)
 
 #NoTrayIcon
 
+#include <AutoItConstants.au3>
 #include <FileConstants.au3>
+#include <FontConstants.au3>
 #include <GDIPlus.au3>
 #include <GUIConstantsEx.au3>
+#include <GuiToolTip.au3>
 #include <StaticConstants.au3>
 #include <StringConstants.au3>
 #include <WinAPIGdi.au3>
@@ -33,11 +38,22 @@
 #include <WindowsConstants.au3>
 #include "PatchData.au3"
 
-Global Const $gc_sTitle = "HotAPatcher 1.02"
+Global Const $gc_sTitle = "HotAPatcher 1.03"
 
-; названия патчей: ими подписаны галочки, ими же помечаются сообщения
-Global Const $gc_sPopupName = "Не показывать «Турнирные правила» при запуске новой игры"
-Global Const $gc_sTownsName = "Запоминать настройки новой игры между сессиями"
+; Названия патчей на галочках; короткие, чтобы справа в строке влезло состояние.
+; Подробности - во всплывающей подсказке
+Global Const $gc_sPopupName = "Не показывать окно «Турнирные правила»"
+Global Const $gc_sTownsName = "Запоминать настройки новой игры"
+Global Const $gc_sMarksName = "Подсвечивать несобранные постройки"
+Global Const $gc_sPopupTip = "При создании новой игры, при каждом нажатии" & @CRLF & _
+		"«Начать», принудительно показывается это окно." & @CRLF & @CRLF & _
+		"Патч его убирает."
+Global Const $gc_sTownsTip = "При создании новой игры на случайной карте" & @CRLF & _
+		"стартовые город, герой и бонус выставлены на случайные." & @CRLF & @CRLF & _
+		"Патч подставляет выбор из прошлой сессии."
+Global Const $gc_sMarksTip = "В игре несобранные мельницы, водяные колёса, сады" & @CRLF & _
+		"и склады не отличить от собранных." & @CRLF & @CRLF & _
+		"После патча над ними поднимаются искры в цвет ресурса."
 
 Global Const $gc_sDllName = "HD_HOTA.dll"
 Global Const $gc_aExeNames[2] = ["h3hota.exe", "h3hota HD.exe"]
@@ -47,20 +63,24 @@ Global Const $gc_aExeNames[2] = ["h3hota.exe", "h3hota HD.exe"]
 Global Const $gc_sBakExt = ".pbak"
 Global Const $gc_sOldBakExt = ".bak"
 
-; для «получилось» и «ошибка» системных цветов нет, остальное берём у Windows
+; Для «получилось» и «ошибка» системных цветов нет, остальное берём у Windows
 Global Const $gc_iColorOk = 0x0F7B0F
 Global Const $gc_iColorBad = 0xC42B1C
 Global $g_iColorText, $g_iColorMuted, $g_iColorBg, $g_iColorPanel, $g_iColorBorder
 
-Global Const $gc_iWinWidth = 450
+Global Const $gc_iColWidth = 392     ; ширина картинок патчей, по ней и всё окно
+Global Const $gc_iPicHeight = 126
 Global Const $gc_iMargin = 29        ; 8 серого поля, рамка и 20 воздуха внутри белой области
+Global Const $gc_iWinWidth = $gc_iMargin * 2 + $gc_iColWidth
 Global Const $gc_iInset = 8          ; серое поле слева и справа от белой области
 Global Const $gc_iLineHeight = 16    ; строка состояния
 Global Const $gc_iGap = 20           ; одинаковый вертикальный отступ между блоками
-Global Const $gc_iContentWidth = $gc_iWinWidth - $gc_iMargin * 2
+Global Const $gc_iMarksFrameMs = 128 ; шаг кадра картинки подсветки, как у искр в игре
 Global Const $gc_iBtnWidth = 88      ; одинаковая ширина всех кнопок
 Global Const $gc_iBtnHeight = 26
 Global Const $gc_iBtnGap = 8         ; просвет между кнопками в ряду
+Global Const $gc_iHintPad = 6        ; отступ значка подсказки от угла картинки
+Global Const $gc_iTipShowMs = 10000  ; сколько висит подсказка, больше Windows не принимает
 Global Const $gc_iPeHeaderSize = 0x1000   ; заголовок PE вместе с таблицей секций
 
 ; Смещения внутри заголовка PE32, всё по спецификации COFF.
@@ -80,26 +100,33 @@ Global Const $ROW_SIZE = 40
 Global Const $ROW_VSIZE = 8, $ROW_RVA = 12, $ROW_RAW_SIZE = 16, $ROW_RAW = 20
 Global Const $SEC_FLAGS_CODE_RWX = 0xE0000060
 
-; поля строки в таблице секций, которую собирает _SectionTable
+; Поля строки в таблице секций, которую собирает _SectionTable
 Global Const $gc_iSecName = 0, $gc_iSecRva = 1, $gc_iSecVSize = 2, $gc_iSecRaw = 3, $gc_iSecRawSize = 4
 
-Global $g_hGui
-Global $g_idInput, $g_idBrowse, $g_idApply, $g_idPlay, $g_idCancel, $g_idPopup, $g_idTowns
-Global $g_idPopupState, $g_idTownsState, $g_idPathState
-; что реально установлено в игре сейчас
-Global $g_bPopupOn = False, $g_bTownsOn = False
-; патч стоял и был снят на наших глазах: пометка живёт до конца работы патчера
-; и только для той папки, в которой мы его снимали
-Global $g_bPopupOff = False, $g_bTownsOff = False, $g_sOffDir = ""
-Global $g_sLastDir = "", $g_sAutoDir = ""
-Global $g_ahBitmaps[3] = [0, 0, 0]
+; Поля врезки в dll, которую находит _FindDllHook
+Global Const $gc_iHookAt = 0, $gc_iHookRva = 1, $gc_iHookContinue = 2, $gc_iHookCall = 3
 
-; окно поднимается только при обычном запуске: Tools\TestPatches.au3 подключает
+Global $g_hGui
+Global $g_idInput, $g_idBrowse, $g_idApply, $g_idPlay, $g_idCancel, $g_idPopup, $g_idTowns, $g_idMarks
+Global $g_idPopupState, $g_idTownsState, $g_idMarksState, $g_idPathState
+; Что реально установлено в игре сейчас
+Global $g_bPopupOn = False, $g_bTownsOn = False, $g_bMarksOn = False
+; Патч стоял и был снят на наших глазах: пометка живёт до конца работы патчера
+; и только для той папки, в которой мы его снимали
+Global $g_bPopupOff = False, $g_bTownsOff = False, $g_bMarksOff = False, $g_sOffDir = ""
+Global $g_sLastDir = "", $g_sAutoDir = ""
+Global $g_ahBitmaps[2] = [0, 0]
+Global $g_hHintImage = 0   ; значок подсказки, GDI+ держит его только пока строится окно
+; Кадры картинки подсветки: static-контрол GIF не проигрывает, их листает таймер
+Global $g_idMarksPic, $g_ahMarksFrames[0], $g_iMarksFrame = 0
+
+; Окно поднимается только при обычном запуске: Tools\TestPatches.au3 подключает
 ; этот файл как библиотеку, и _Main() ему не нужен
 If @Compiled Or @ScriptName = "HotAPatcher.au3" Then _Main()
 
 Func _Main()
 	If Not @Compiled Then FileChangeDir(@ScriptDir)
+	OnAutoItExitRegister("_Cleanup")   ; временные файлы и кадры убираем при любом выходе
 
 	_InitColors()
 	_BuildGui()
@@ -117,7 +144,7 @@ Func _Main()
 			Case $g_idBrowse
 				_BrowseForDir()
 
-			Case $g_idPopup, $g_idTowns
+			Case $g_idMarks, $g_idPopup, $g_idTowns
 				_UpdateButtons()
 
 			Case $g_idApply
@@ -133,8 +160,6 @@ Func _Main()
 				If GUICtrlRead($g_idInput) <> $g_sLastDir Then _RefreshState()
 		EndSwitch
 	WEnd
-
-	_Cleanup()
 EndFunc   ;==>_Main
 
 
@@ -160,66 +185,51 @@ EndFunc   ;==>_SysColor
 Func _BuildGui()
 	$g_hGui = GUICreate($gc_sTitle, $gc_iWinWidth, 100)   ; высоту подгоняем в конце
 	GUISetBkColor($g_iColorBg)
-	GUISetFont(9, 400, 0, "Segoe UI")
+	GUISetFont(9, $FW_NORMAL, 0, "Segoe UI")
 	_SetWindowIcon()
 	_GDIPlus_Startup()
 
-	Local $idIcon = GUICtrlCreatePic("", $gc_iMargin, 15, 32, 32)
-	$g_ahBitmaps[0] = _LoadPicture($idIcon, "Icon.png")
+	; Шапки нет: серое поле сверху такое же, как по бокам
+	Local $iPanelTop = $gc_iInset
 
-	Local $idTitle = GUICtrlCreateLabel("Патчер для Heroes 3: Horn of the Abyss", $gc_iMargin + 42, 13, 344, 24)
-	GUICtrlSetFont($idTitle, 12, 600, 0, "Segoe UI")
-	GUICtrlSetColor($idTitle, $g_iColorText)
-	GUICtrlSetBkColor($idTitle, $g_iColorBg)
+	; Дальше идём сверху вниз, отступ между блоками всегда одинаковый
+	Local $iX = $gc_iMargin
+	Local $iPicTop = 26   ; галочка со строкой состояния над картинкой
+	Local $iY = $iPanelTop + 1 + $gc_iGap
 
-	Local $idSubtitle = GUICtrlCreateLabel("Выберите, что применить к игре", $gc_iMargin + 42, 37, 344, 18)
-	GUICtrlSetColor($idSubtitle, $g_iColorMuted)
-	GUICtrlSetBkColor($idSubtitle, $g_iColorBg)
+	_LoadHintImage()   ; значок подсказки впекается в картинки патчей
 
-	Local $iPanelTop = 64
+	$g_idMarks = _CreatePatch($iX, $iY, $gc_sMarksName, $gc_sMarksTip, $g_idMarksState)
+	$g_idMarksPic = _CreatePatchPic($iX, $iY + $iPicTop, $gc_sMarksTip)
+	_LoadMarksFrames()
+	$iY += $iPicTop + $gc_iPicHeight + $gc_iGap
 
-	; дальше идём сверху вниз, отступ между блоками всегда одинаковый
-	Local $y = $iPanelTop + 1 + $gc_iGap
+	$g_idTowns = _CreatePatch($iX, $iY, $gc_sTownsName, $gc_sTownsTip, $g_idTownsState)
+	$g_ahBitmaps[1] = _LoadPicture(_CreatePatchPic($iX, $iY + $iPicTop, $gc_sTownsTip), "Towns.png")
+	$iY += $iPicTop + $gc_iPicHeight + $gc_iGap
 
-	$g_idPopup = GUICtrlCreateCheckbox(" " & $gc_sPopupName, $gc_iMargin, $y, $gc_iContentWidth, 20)
-	GUICtrlSetColor($g_idPopup, $g_iColorText)
-	GUICtrlSetBkColor($g_idPopup, $g_iColorPanel)
-	$y += 22
+	$g_idPopup = _CreatePatch($iX, $iY, $gc_sPopupName, $gc_sPopupTip, $g_idPopupState)
+	$g_ahBitmaps[0] = _LoadPicture(_CreatePatchPic($iX, $iY + $iPicTop, $gc_sPopupTip), "Popup.png")
+	$iY += $iPicTop + $gc_iPicHeight + $gc_iGap
 
-	$g_idPopupState = _CreateStateLabel($y)
-	$y += 22
+	_FreeHintImage()
 
-	Local $idShot = GUICtrlCreatePic("", $gc_iMargin, $y, $gc_iContentWidth, 126)
-	$g_ahBitmaps[1] = _LoadPicture($idShot, "Popup.png")
-	$y += 126 + $gc_iGap
-
-	$g_idTowns = GUICtrlCreateCheckbox(" " & $gc_sTownsName, $gc_iMargin, $y, $gc_iContentWidth, 20)
-	GUICtrlSetColor($g_idTowns, $g_iColorText)
-	GUICtrlSetBkColor($g_idTowns, $g_iColorPanel)
-	$y += 22
-
-	$g_idTownsState = _CreateStateLabel($y)
-	$y += 22
-
-	Local $idTownsPic = GUICtrlCreatePic("", $gc_iMargin, $y, $gc_iContentWidth, 126)
-	$g_ahBitmaps[2] = _LoadPicture($idTownsPic, "Towns.png")
-	$y += 126 + $gc_iGap
-
-	Local $idPathLabel = GUICtrlCreateLabel("Папка с игрой", $gc_iMargin, $y, 300, 16)
+	Local $idPathLabel = GUICtrlCreateLabel("Папка с игрой", $iX, $iY, 300, 16)
 	GUICtrlSetColor($idPathLabel, $g_iColorText)
 	GUICtrlSetBkColor($idPathLabel, $g_iColorPanel)
-	$y += 20
+	$iY += 20
 
-	$g_idInput = GUICtrlCreateInput("", $gc_iMargin, $y, $gc_iContentWidth - $gc_iBtnWidth - 8, 24)
-	$g_idBrowse = GUICtrlCreateButton("Обзор...", $gc_iMargin + $gc_iContentWidth - $gc_iBtnWidth, $y - 1, _
+	$g_idInput = GUICtrlCreateInput("", $iX, $iY, $gc_iColWidth - $gc_iBtnWidth - 8, 24)
+	$g_idBrowse = GUICtrlCreateButton("Обзор...", $iX + $gc_iColWidth - $gc_iBtnWidth, $iY - 1, _
 			$gc_iBtnWidth, $gc_iBtnHeight)
-	$y += 28
+	$iY += 28
 
-	$g_idPathState = _CreateStateLabel($y, 0)
-	$y += $gc_iLineHeight + $gc_iGap
+	$g_idPathState = GUICtrlCreateLabel("", $iX, $iY, $gc_iColWidth, $gc_iLineHeight)
+	GUICtrlSetBkColor($g_idPathState, $g_iColorPanel)
+	$iY += $gc_iLineHeight + $gc_iGap
 
-	; кнопки справа налево: «Применить», «Играть», «Закрыть»
-	Local $iPanelBottom = $y
+	; Кнопки справа налево: «Применить», «Играть», «Закрыть»
+	Local $iPanelBottom = $iY
 	Local $iRight = $gc_iWinWidth - $gc_iInset - 1
 	Local $iButtons = $iPanelBottom + 12
 	Local $iStep = $gc_iBtnWidth + $gc_iBtnGap
@@ -230,7 +240,7 @@ Func _BuildGui()
 	$g_idCancel = GUICtrlCreateButton("Закрыть", $iRight - $gc_iBtnWidth - $iStep * 2, $iButtons, _
 			$gc_iBtnWidth, $gc_iBtnHeight)
 
-	; белое поле создаётся раньше рамки: тогда рамка лежит ниже него
+	; Белое поле создаётся раньше рамки: тогда рамка лежит ниже него
 	; и с WS_CLIPSIBLINGS рисует только выступающий по краю контур
 	Local $iFrame = $gc_iInset, $iPanelHeight = $iPanelBottom - $iPanelTop
 	_Backdrop(GUICtrlCreateLabel("", $iFrame + 1, $iPanelTop + 1, _
@@ -242,7 +252,7 @@ Func _BuildGui()
 EndFunc   ;==>_BuildGui
 
 
-; высота окна считается по разметке: иначе её приходится править руками
+; Высота окна считается по разметке: иначе её приходится править руками
 ; после каждого изменения содержимого
 Func _FitWindow($iContentHeight)
 	Local $aWin = WinGetPos($g_hGui)
@@ -252,23 +262,100 @@ Func _FitWindow($iContentHeight)
 EndFunc   ;==>_FitWindow
 
 
-; строка состояния под настройкой; отступ выравнивает её по подписи галочки
-Func _CreateStateLabel($iTop, $iIndent = 18)
-	Local $idLabel = GUICtrlCreateLabel("", $gc_iMargin + $iIndent, $iTop, $gc_iContentWidth - $iIndent, $gc_iLineHeight)
-	GUICtrlSetBkColor($idLabel, $g_iColorPanel)
-	Return $idLabel
-EndFunc   ;==>_CreateStateLabel
+; Галочка патча и строка состояния справа в той же строке;
+; ширину между ними делит _FitPatchRow по тексту состояния
+Func _CreatePatch($iX, $iY, $sName, $sTip, ByRef $idState)
+	Local Const $SS_ENDELLIPSIS = 0x4000   ; в StaticConstants его нет
+
+	Local $idCheck = GUICtrlCreateCheckbox(" " & $sName, $iX, $iY, $gc_iColWidth, 20)
+	GUICtrlSetColor($idCheck, $g_iColorText)
+	GUICtrlSetBkColor($idCheck, $g_iColorPanel)
+	_SetTip($idCheck, $sTip)
+	$idState = GUICtrlCreateLabel("", $iX + $gc_iColWidth, $iY + 2, 0, $gc_iLineHeight, _
+			BitOR($SS_RIGHT, $SS_ENDELLIPSIS))
+	GUICtrlSetBkColor($idState, $g_iColorPanel)
+	Return $idCheck
+EndFunc   ;==>_CreatePatch
 
 
-Func _SetState($idLabel, $sText, $iColor)
+; Картинка патча с той же подсказкой, что у галочки: на подсказку намекает
+; значок в углу картинки и курсор-лапа
+Func _CreatePatchPic($iX, $iY, $sTip)
+	Local $idPic = GUICtrlCreatePic("", $iX, $iY, $gc_iColWidth, $gc_iPicHeight)
+	_SetTip($idPic, $sTip)
+	GUICtrlSetCursor($idPic, $MCID_HAND)   ; лапа - 0, а 16 это $MCID_NONE: курсор пропадал
+	Return $idPic
+EndFunc   ;==>_CreatePatchPic
+
+
+Func _SetState($idLabel, $sText, $iColor, $sTip = "")
 	GUICtrlSetData($idLabel, $sText)
 	GUICtrlSetColor($idLabel, $iColor)
+	Local $idCheck = _PatchCheckOf($idLabel)
+	If $idCheck Then _FitPatchRow($idCheck, $idLabel, $sText, $sTip)
 EndFunc   ;==>_SetState
+
+
+; Галочка, в строке которой стоит это состояние; 0 - строка под путём
+Func _PatchCheckOf($idState)
+	Switch $idState
+		Case $g_idPopupState
+			Return $g_idPopup
+		Case $g_idTownsState
+			Return $g_idTowns
+		Case $g_idMarksState
+			Return $g_idMarks
+	EndSwitch
+	Return 0
+EndFunc   ;==>_PatchCheckOf
+
+
+; Состояние прижато вправо и забирает у галочки столько места, сколько ему нужно:
+; длинная ошибка важнее названия патча. Не влезло и так - многоточие, а полный
+; текст в подсказке, если своей подсказки у состояния нет
+Func _FitPatchRow($idCheck, $idState, $sText, $sTip)
+	Local Const $CHECK_BOX = 18, $GAP = 8   ; квадратик галочки с отступом, просвет до состояния
+	Local $iMax = $gc_iColWidth - $CHECK_BOX - $GAP
+	Local $iWidth = ($sText = "") ? 0 : _TextWidth($idState, $sText) + 2
+	If $iWidth > $iMax Then $iWidth = $iMax
+	If $sTip = "" And $iWidth = $iMax Then $sTip = $sText
+
+	Local $aPos = ControlGetPos($g_hGui, "", $idCheck)
+	GUICtrlSetPos($idCheck, $gc_iMargin, $aPos[1], $gc_iColWidth - $iWidth - $GAP, $aPos[3])
+	GUICtrlSetPos($idState, $gc_iMargin + $gc_iColWidth - $iWidth, $aPos[1] + 2, $iWidth, $gc_iLineHeight)
+	_SetTip($idState, $sTip)
+	GUICtrlSetCursor($idState, ($sTip = "") ? -1 : $MCID_HELP)   ; -1 - курсор по умолчанию
+EndFunc   ;==>_FitPatchRow
+
+
+; Штатно подсказка гаснет через 5 секунд, текст не успеть прочитать.
+; AutoIt пересоздаёт окно подсказки на каждый вызов, и задержка
+; сбрасывается: ставим её заново всем окнам подсказок патчера
+Func _SetTip($idCtrl, $sTip)
+	GUICtrlSetTip($idCtrl, $sTip)
+	Local $aTips = WinList("[CLASS:tooltips_class32]")
+	For $i = 1 To $aTips[0][0]
+		If WinGetProcess($aTips[$i][1]) = @AutoItPID Then _
+				_GUIToolTip_SetDelayTime($aTips[$i][1], $TTDT_AUTOPOP, $gc_iTipShowMs)
+	Next
+EndFunc   ;==>_SetTip
+
+
+; Ширина текста в пикселях шрифтом контрола
+Func _TextWidth($idCtrl, $sText)
+	Local $hCtrl = GUICtrlGetHandle($idCtrl)
+	Local $hDC = _WinAPI_GetDC($hCtrl)
+	Local $hOld = _WinAPI_SelectObject($hDC, GUICtrlSendMsg($idCtrl, $WM_GETFONT, 0, 0))
+	Local $tSize = _WinAPI_GetTextExtentPoint32($hDC, $sText)
+	_WinAPI_SelectObject($hDC, $hOld)
+	_WinAPI_ReleaseDC($hCtrl, $hDC)
+	Return DllStructGetData($tSize, "X")
+EndFunc   ;==>_TextWidth
 
 
 ; Красит подложку. WS_CLIPSIBLINGS - чтобы при перерисовке она не затирала
 ; соседей: без него у полей пропадали рамки, а картинки исчезали.
-; SS_NOTIFY снимаем, иначе мышь не проваливается сквозь подложку.
+; SS_NOTIFY снимаем, иначе мышь не проваливается сквозь подложку
 Func _Backdrop($idCtrl, $iColor)
 	GUICtrlSetBkColor($idCtrl, $iColor)
 	Local $hCtrl = GUICtrlGetHandle($idCtrl)
@@ -290,8 +377,6 @@ EndFunc   ;==>_SetWindowIcon
 Func _LoadPicture($idPic, $sName)
 	Local $sPath = @TempDir & "\HotaPatcher_" & $sName
 	Switch $sName
-		Case "Icon.png"
-			FileInstall("Assets\Icons\Icon.png", $sPath, $FC_OVERWRITE)
 		Case "Popup.png"
 			FileInstall("Assets\Popup.png", $sPath, $FC_OVERWRITE)
 		Case "Towns.png"
@@ -302,8 +387,7 @@ Func _LoadPicture($idPic, $sName)
 	Local $hImage = _GDIPlus_ImageLoadFromFile($sPath)
 	Local $hBitmap = 0
 	If $hImage Then
-		; альфа-канал PNG блендим в цвет фона окна, иначе GDI+ зальёт его чёрным
-		$hBitmap = _GDIPlus_BitmapCreateHBITMAPFromBitmap($hImage, BitOR(0xFF000000, $g_iColorBg))
+		$hBitmap = _HintedBitmap($hImage)
 		_GDIPlus_ImageDispose($hImage)
 	EndIf
 	FileDelete($sPath)
@@ -315,7 +399,97 @@ Func _LoadPicture($idPic, $sName)
 EndFunc   ;==>_LoadPicture
 
 
+Func _LoadHintImage()
+	Local $sPath = @TempDir & "\HotaPatcher_Hint.png"
+	FileInstall("Assets\Hint.png", $sPath, $FC_OVERWRITE)
+	$g_hHintImage = _GDIPlus_ImageLoadFromFile($sPath)
+	If @error Then $g_hHintImage = 0   ; картинки останутся без значка, подсказка всё равно работает
+EndFunc   ;==>_LoadHintImage
+
+
+Func _FreeHintImage()
+	If $g_hHintImage Then _GDIPlus_ImageDispose($g_hHintImage)
+	$g_hHintImage = 0
+	FileDelete(@TempDir & "\HotaPatcher_Hint.png")   ; GDI+ держит файл открытым, пока картинка жива
+EndFunc   ;==>_FreeHintImage
+
+
+; Картинка со значком подсказки в правом верхнем углу, в HBITMAP на цвет фона.
+; Рисуем на своём холсте: у PNG с палитрой GDI+ не даёт контекст рисования,
+; а кадры GIF копятся на общем холсте, и значок на нём темнел бы с каждым кадром
+Func _HintedBitmap($hImage)
+	Local $iWidth = _GDIPlus_ImageGetWidth($hImage), $iHeight = _GDIPlus_ImageGetHeight($hImage)
+	Local $hCanvas = _GDIPlus_BitmapCreateFromScan0($iWidth, $iHeight)
+	Local $hGraphics = _GDIPlus_ImageGetGraphicsContext($hCanvas)
+	_GDIPlus_GraphicsDrawImageRect($hGraphics, $hImage, 0, 0, $iWidth, $iHeight)
+	If $g_hHintImage Then
+		Local $iHint = _GDIPlus_ImageGetWidth($g_hHintImage)
+		_GDIPlus_GraphicsDrawImageRect($hGraphics, $g_hHintImage, $iWidth - $iHint - $gc_iHintPad, $gc_iHintPad, _
+				$iHint, $iHint)
+	EndIf
+	_GDIPlus_GraphicsDispose($hGraphics)
+
+	; Альфа-канал PNG блендим в цвет фона окна, иначе GDI+ зальёт его чёрным
+	Local $hBitmap = _GDIPlus_BitmapCreateHBITMAPFromBitmap($hCanvas, BitOR(0xFF000000, $g_iColorBg))
+	_GDIPlus_BitmapDispose($hCanvas)
+	Return $hBitmap
+EndFunc   ;==>_HintedBitmap
+
+
+; Кадры анимированной картинки подсветки - в HBITMAP на цвет фона, и таймер
+; на их смену. Кадры в GIF хранят только изменившиеся пиксели, поэтому каждый
+; рисуется поверх предыдущего на общем холсте
+Func _LoadMarksFrames()
+	Local $sPath = @TempDir & "\HotaPatcher_Marks.gif"
+	FileInstall("Assets\Marks.gif", $sPath, $FC_OVERWRITE)
+	Local $hImage = _GDIPlus_ImageLoadFromFile($sPath)
+	If Not $hImage Then
+		FileDelete($sPath)
+		Return
+	EndIf
+
+	Local $iCount = _GDIPlus_ImageGetFrameCount($hImage, $GDIP_FRAMEDIMENSION_TIME)
+	Local $iWidth = _GDIPlus_ImageGetWidth($hImage), $iHeight = _GDIPlus_ImageGetHeight($hImage)
+	Local $hCanvas = _GDIPlus_BitmapCreateFromScan0($iWidth, $iHeight)
+	Local $hGraphics = _GDIPlus_ImageGetGraphicsContext($hCanvas)
+	ReDim $g_ahMarksFrames[$iCount]
+	For $i = 0 To $iCount - 1
+		_GDIPlus_ImageSelectActiveFrame($hImage, $GDIP_FRAMEDIMENSION_TIME, $i)
+		_GDIPlus_GraphicsDrawImageRect($hGraphics, $hImage, 0, 0, $iWidth, $iHeight)
+		$g_ahMarksFrames[$i] = _HintedBitmap($hCanvas)
+	Next
+	_GDIPlus_GraphicsDispose($hGraphics)
+	_GDIPlus_BitmapDispose($hCanvas)
+	_GDIPlus_ImageDispose($hImage)
+	FileDelete($sPath)   ; GDI+ держит файл открытым, пока картинка жива
+
+	If $iCount = 0 Then Return
+	$g_iMarksFrame = -1
+	_NextMarksFrame()
+	AdlibRegister("_NextMarksFrame", $gc_iMarksFrameMs)
+EndFunc   ;==>_LoadMarksFrames
+
+
+; Static-контрол хранит копию картинки, если в ней есть альфа, и отдаёт её
+; при следующей смене. Чужую копию удаляем, свои кадры живут до выхода
+Func _NextMarksFrame()
+	Local $iCount = UBound($g_ahMarksFrames)
+	If $iCount = 0 Then Return
+	$g_iMarksFrame = Mod($g_iMarksFrame + 1, $iCount)
+	Local $hPrevious = GUICtrlSendMsg($g_idMarksPic, $STM_SETIMAGE, $IMAGE_BITMAP, $g_ahMarksFrames[$g_iMarksFrame])
+	If $hPrevious = 0 Then Return
+	For $i = 0 To $iCount - 1
+		If $g_ahMarksFrames[$i] = $hPrevious Then Return
+	Next
+	_WinAPI_DeleteObject($hPrevious)
+EndFunc   ;==>_NextMarksFrame
+
+
 Func _Cleanup()
+	AdlibUnRegister("_NextMarksFrame")
+	For $i = 0 To UBound($g_ahMarksFrames) - 1
+		_WinAPI_DeleteObject($g_ahMarksFrames[$i])
+	Next
 	For $i = 0 To UBound($g_ahBitmaps) - 1
 		If $g_ahBitmaps[$i] Then _WinAPI_DeleteObject($g_ahBitmaps[$i])
 	Next
@@ -340,7 +514,7 @@ EndFunc   ;==>_DetectGameDir
 
 
 Func _RegistryGameDir()
-	; обе разрядности: HKLM64 для x86-процесса, WOW6432Node для x64-процесса
+	; Обе разрядности: HKLM64 для x86-процесса, WOW6432Node для x64-процесса
 	Local $aRoots[4] = [ _
 			"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", _
 			"HKLM64\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", _
@@ -376,7 +550,7 @@ Func _BrowseForDir()
 EndFunc   ;==>_BrowseForDir
 
 
-; папка годится, только если на месте все три файла, которые мы правим
+; Папка годится, только если на месте все три файла, которые мы правим
 Func _DirIsGame($sDir)
 	If $sDir = "" Then Return False
 	Local $aFiles = _TargetFiles($sDir)
@@ -388,7 +562,7 @@ EndFunc   ;==>_DirIsGame
 
 
 Func _GameDir()
-	Return StringStripWS(GUICtrlRead($g_idInput), 3)
+	Return StringStripWS(GUICtrlRead($g_idInput), $STR_STRIPLEADING + $STR_STRIPTRAILING)
 EndFunc   ;==>_GameDir
 
 
@@ -402,9 +576,10 @@ Func _RefreshState()
 
 	If Not _DirIsGame($sDir) Then
 		_SetState($g_idPathState, "В указанной папке нет файлов игры", $gc_iColorBad)
-		_ShowPatches(False, False)   ; не знаем состояния - не показываем и галочек
-		_SetState($g_idPopupState, "Состояние неизвестно", $g_iColorMuted)
-		_SetState($g_idTownsState, "Состояние неизвестно", $g_iColorMuted)
+		_ShowPatches(False, False, False)   ; не знаем состояния - не показываем и галочек
+		_SetState($g_idPopupState, "", $g_iColorMuted)
+		_SetState($g_idTownsState, "", $g_iColorMuted)
+		_SetState($g_idMarksState, "", $g_iColorMuted)
 		_UpdateButtons()
 		Return
 	EndIf
@@ -415,42 +590,56 @@ Func _RefreshState()
 		_SetState($g_idPathState, "Файлы игры на месте", $g_iColorMuted)
 	EndIf
 
-	; dll читается и просматривается один раз на оба патча: это самая дорогая
-	; часть обновления, а место врезки в ней для обоих одно и то же
-	Local $bPopup = False, $bTowns = False
-	Local $sDll = _ReadFileHex($sDir & "\" & $gc_sDllName)
-	If Not @error Then
-		Local $iOffset = 0, $iHookRva = 0, $iContinueRva = 0, $iCallRva = 0
-		If _FindDllHook($sDll, $iOffset, $iHookRva, $iContinueRva, $iCallRva) Then
-			$bPopup = _PopupPatchedAt($sDll, $iOffset, $iHookRva, $iContinueRva)
-			$bTowns = _ExePatched($sDir) And _DllStubStateAt($sDll, $iOffset, $iHookRva) = ""
-		EndIf
-	EndIf
-
-	_ShowPatches($bPopup, $bTowns)
+	Local $aOn = _InstalledPatches($sDir)
+	_ShowPatches($aOn[0], $aOn[1], $aOn[2])
 	_UpdateButtons()
 EndFunc   ;==>_RefreshState
 
 
-; галочки и строки под ними всегда показывают то, что лежит в файлах игры
-Func _ShowPatches($bPopup, $bTowns)
-	_MarkRemoved(_GameDir(), $bPopup, $bTowns)
+; Что стоит в файлах игры: [окно, настройки, подсветка]. Dll читается и
+; просматривается один раз на оба своих патча: это самая дорогая часть опроса,
+; а место врезки в ней для обоих одно и то же
+Func _InstalledPatches($sDir)
+	Local $aOn[3] = [False, False, _ExeProblem($sDir, True) = ""]
+	Local $sDll = _ReadFileHex($sDir & "\" & $gc_sDllName)
+	If @error Then Return $aOn
+	Local $aHook = _FindDllHook($sDll)
+	If @error Then Return $aOn
+	$aOn[0] = _PopupPatchedAt($sDll, $aHook)
+	$aOn[1] = _ExeProblem($sDir, False) = "" And _DllStubStateAt($sDll, $aHook) = ""
+	Return $aOn
+EndFunc   ;==>_InstalledPatches
+
+
+; Галочки и строки под ними всегда показывают то, что лежит в файлах игры
+Func _ShowPatches($bPopup, $bTowns, $bMarks)
+	_MarkRemoved(_GameDir(), $bPopup, $bTowns, $bMarks)
 	$g_bPopupOn = $bPopup
 	$g_bTownsOn = $bTowns
+	$g_bMarksOn = $bMarks
 	GUICtrlSetState($g_idPopup, $bPopup ? $GUI_CHECKED : $GUI_UNCHECKED)
 	GUICtrlSetState($g_idTowns, $bTowns ? $GUI_CHECKED : $GUI_UNCHECKED)
+	GUICtrlSetState($g_idMarks, $bMarks ? $GUI_CHECKED : $GUI_UNCHECKED)
 	_ShowPatchState($g_idPopupState, $bPopup, $g_bPopupOff)
 	_ShowPatchState($g_idTownsState, $bTowns, $g_bTownsOff)
+	_ShowPatchState($g_idMarksState, $bMarks, $g_bMarksOff)
 EndFunc   ;==>_ShowPatches
 
 
 ; Отмечает патчи, пропавшие из файлов на наших глазах: только их и зовём
 ; «снятыми». Пометки привязаны к папке, в другой игре они ничего не значат
-Func _MarkRemoved($sDir, $bPopup, $bTowns)
+Func _MarkRemoved($sDir, $bPopup, $bTowns, $bMarks)
 	If $sDir <> $g_sOffDir Then
 		$g_sOffDir = $sDir
 		$g_bPopupOff = False
 		$g_bTownsOff = False
+		$g_bMarksOff = False
+	EndIf
+
+	If $bMarks Then
+		$g_bMarksOff = False
+	ElseIf $g_bMarksOn Then
+		$g_bMarksOff = True
 	EndIf
 
 	If $bPopup Then
@@ -481,7 +670,8 @@ EndFunc   ;==>_ShowPatchState
 ; «Применить» доступна, только если отмеченное расходится с установленным
 Func _UpdateButtons()
 	Local $bChanged = (GUICtrlRead($g_idPopup) = $GUI_CHECKED) <> $g_bPopupOn Or _
-			(GUICtrlRead($g_idTowns) = $GUI_CHECKED) <> $g_bTownsOn
+			(GUICtrlRead($g_idTowns) = $GUI_CHECKED) <> $g_bTownsOn Or _
+			(GUICtrlRead($g_idMarks) = $GUI_CHECKED) <> $g_bMarksOn
 
 	If _DirIsGame(_GameDir()) And $bChanged Then
 		GUICtrlSetState($g_idApply, $GUI_ENABLE)
@@ -495,57 +685,70 @@ EndFunc   ;==>_UpdateButtons
 ; Действия
 ; ==========================================================
 
-; приводит файлы игры к тому состоянию, которое отмечено галочками
+; Приводит файлы игры к тому состоянию, которое отмечено галочками
 Func _DoApply()
 	Local $sDir = _GameDir()
 	Local $bPopup = (GUICtrlRead($g_idPopup) = $GUI_CHECKED)
 	Local $bTowns = (GUICtrlRead($g_idTowns) = $GUI_CHECKED)
+	Local $bMarks = (GUICtrlRead($g_idMarks) = $GUI_CHECKED)
 	Local $bPopupChanged = ($bPopup <> $g_bPopupOn)
 	Local $bTownsChanged = ($bTowns <> $g_bTownsOn)
+	Local $bMarksChanged = ($bMarks <> $g_bMarksOn)
 
 	_Busy(True)   ; патч занимает около полусекунды, и всё это время окно молчит
 
-	Local $sError = ""
+	Local $sError = "", $sShort = ""
 	If _GameIsRunning() Then
-		$sError = "Игра запущена, закройте её – файлы заняты"
+		$sShort = "Файлы заняты, закройте игру"
+		$sError = $sShort
 	Else
-		$sError = _ApplyPatches($sDir, $bPopup, $bTowns)
+		$sError = _ApplyPatches($sDir, $bPopup, $bTowns, $bMarks)
 		If $sError <> "" Then _RestoreFromBackups($sDir)   ; не оставляем файлы на полпути
 	EndIf
 
 	_RefreshState()   ; строки состояния пересчитываются по самим файлам игры
 	_Busy(False)
 
-	; галочки могли остаться неотработанными и без явной ошибки: патч мог лечь
+	; Галочки могли остаться неотработанными и без явной ошибки: патч мог лечь
 	; наполовину, поэтому итог сверяется с тем, что просили
-	If $sError = "" And ($g_bPopupOn <> $bPopup Or $g_bTownsOn <> $bTowns) Then _
-			$sError = _Mismatch($sDir, $bPopup, $bTowns, $g_bTownsOn)
+	If $sError = "" And ($g_bPopupOn <> $bPopup Or $g_bTownsOn <> $bTowns Or $g_bMarksOn <> $bMarks) Then _
+			$sError = _Mismatch($sDir, $bPopup, $bTowns, $bMarks)
 
-	; после полного отката файлы снова оригинальные, копии хранить незачем
-	If $sError = "" And Not $g_bPopupOn And Not $g_bTownsOn Then _DeleteBackups($sDir)
+	; После полного отката файлы снова оригинальные, копии хранить незачем
+	If $sError = "" And Not $g_bPopupOn And Not $g_bTownsOn And Not $g_bMarksOn Then _DeleteBackups($sDir)
 
-	; об ошибке пишем там, где пользователь ждал изменения
+	; Об ошибке пишем там, где пользователь ждал изменения: коротко, подробности в подсказке
 	If $sError <> "" Then
-		If $bPopupChanged Then _SetState($g_idPopupState, $sError, $gc_iColorBad)
-		If $bTownsChanged Then _SetState($g_idTownsState, $sError, $gc_iColorBad)
+		If $sShort = "" Then $sShort = _ShortError($sError)
+		Local $sTip = ($sShort = $sError) ? "" : $sError
+		If $bPopupChanged Then _SetState($g_idPopupState, $sShort, $gc_iColorBad, $sTip)
+		If $bTownsChanged Then _SetState($g_idTownsState, $sShort, $gc_iColorBad, $sTip)
+		If $bMarksChanged Then _SetState($g_idMarksState, $sShort, $gc_iColorBad, $sTip)
 	EndIf
 EndFunc   ;==>_DoApply
+
+
+; Короткая ошибка для строки патча. Сбои чтения, записи и копий начинаются
+; с «Не удалось» и «Потеряна», а патч, оставшийся после отката, говорит «остал...».
+; Всё прочее значит, что патчер не узнал код игры: у неё другая версия
+Func _ShortError($sError)
+	If StringRegExp($sError, "(?i)^(не удалось (прочитать|записать|создать|восстановить)|потеряна)|остал") Then _
+			Return "Не удалось изменить файлы игры"
+	Return "Не подходит для этой версии игры"
+EndFunc   ;==>_ShortError
 
 
 ; Курсор ожидания на время работы с файлами. Перерисовываем сразу: очередь
 ; сообщений патчер не качает, пока правит файлы, и нажатая кнопка осталась бы
 ; обычной. «Играть» гасим тоже: клик дошёл бы до полупропатченных файлов
 Func _Busy($bOn)
-	; номера курсоров из MouseGetCursor
-	Local Const $CURSOR_ARROW = 2, $CURSOR_WAIT = 15
-
 	GUICtrlSetState($g_idPlay, $bOn ? $GUI_DISABLE : $GUI_ENABLE)
 	If Not $bOn Then
-		GUISetCursor($CURSOR_ARROW, 0, $g_hGui)   ; «Применить» вернёт _UpdateButtons, если есть что применять
+		GUISetCursor($MCID_ARROW, 0, $g_hGui)   ; «Применить» вернёт _UpdateButtons, если есть что применять
 		Return
 	EndIf
 	GUICtrlSetState($g_idApply, $GUI_DISABLE)
-	GUISetCursor($CURSOR_WAIT, 1, $g_hGui)
+	GUISetCursor($MCID_WAIT, 1, $g_hGui)
 	_WinAPI_RedrawWindow($g_hGui, 0, 0, BitOR($RDW_ALLCHILDREN, $RDW_UPDATENOW))
 EndFunc   ;==>_Busy
 
@@ -566,43 +769,47 @@ Func _LaunchGame()
 EndFunc   ;==>_LaunchGame
 
 
-; правит файлы игры; возвращает описание ошибки или пустую строку
-Func _ApplyPatches($sDir, $bPopup, $bTowns)
+; Правит файлы игры; возвращает описание ошибки или пустую строку
+Func _ApplyPatches($sDir, $bPopup, $bTowns, $bMarks)
 	_MigrateBackups($sDir)   ; копии от прошлых версий лежат под старым расширением
 
-	If Not $bPopup And Not $bTowns Then Return _RestoreFromBackups($sDir, True)
+	If Not $bPopup And Not $bTowns And Not $bMarks Then Return _RestoreFromBackups($sDir, True)
 
 	Local $sError = _EnsureBackups($sDir)
 	If $sError <> "" Then Return $sError
 	$sError = _RestoreFromBackups($sDir)   ; патчим всегда от оригиналов
 	If $sError <> "" Then Return $sError
 
-	If $bTowns Then
-		For $i = 0 To UBound($gc_aExeNames) - 1
-			$sError = _PatchExe($sDir & "\" & $gc_aExeNames[$i])
-			If $sError <> "" Then Return $sError
-		Next
-		; заглушка в dll зовёт процедуру из секции exe, поэтому её адрес
-		; берётся из уже пропатченного файла
-		Local $iSave = _ExeSaveProc($sDir & "\" & $gc_aExeNames[1])
-		If $iSave = 0 Then Return "В " & $gc_aExeNames[1] & " не нашлась секция патча"
-		Return _PatchDllStub($sDir & "\" & $gc_sDllName, $bPopup, $iSave)
-	EndIf
+	For $i = 0 To UBound($gc_aExeNames) - 1
+		$sError = _PatchExeFile($sDir & "\" & $gc_aExeNames[$i], $bTowns, $bMarks)
+		If $sError <> "" Then Return $sError
+	Next
+	If Not $bPopup And Not $bTowns Then Return ""
 
-	Return _PatchDllPopupOnly($sDir & "\" & $gc_sDllName)
+	; Заглушка в dll зовёт процедуру из секции exe, поэтому её адрес
+	; берётся из уже пропатченного файла
+	Local $iSave = 0
+	If $bTowns Then
+		$iSave = _ExeSaveProc($sDir & "\" & $gc_aExeNames[1])
+		If $iSave = 0 Then Return "В " & $gc_aExeNames[1] & " не нашлась секция патча"
+	EndIf
+	Return _PatchDll($sDir & "\" & $gc_sDllName, $bPopup, $iSave)
 EndFunc   ;==>_ApplyPatches
 
 
 ; Называет, что именно разошлось с запрошенным. Патч мог лечь наполовину:
 ; секция добавилась, а врезка не встала - тогда причина видна по самим файлам
-Func _Mismatch($sDir, $bPopup, $bTowns, $bTownsNow)
-	If $bTowns <> $bTownsNow Then
+Func _Mismatch($sDir, $bPopup, $bTowns, $bMarks)
+	If $bMarks <> $g_bMarksOn Then
+		If Not $bMarks Then Return "подсветка осталась в файлах игры"
+		Local $sMarks = _ExeProblem($sDir, True)
+		If $sMarks = "" Then $sMarks = "причина не видна"
+		Return "подсветка не встала, " & $sMarks
+	EndIf
+
+	If $bTowns <> $g_bTownsOn Then
 		If Not $bTowns Then Return "патч настроек остался в файлах игры"
-		Local $sWhy = ""
-		For $i = 0 To UBound($gc_aExeNames) - 1
-			$sWhy = _ExePatchState($sDir & "\" & $gc_aExeNames[$i])
-			If $sWhy <> "" Then ExitLoop
-		Next
+		Local $sWhy = _ExeProblem($sDir, False)
 		If $sWhy = "" Then $sWhy = _DllStubState($sDir & "\" & $gc_sDllName)
 		If $sWhy = "" Then $sWhy = "причина не видна"
 		Return "патч настроек не встал, " & $sWhy
@@ -640,31 +847,31 @@ EndFunc   ;==>_MigrateBackups
 
 
 ; Несёт ли файл наш патч. Своя секция - главная метка, но патч окна обходится
-; без неё, поэтому у dll смотрим ещё и саму врезку.
+; без неё, поэтому у dll смотрим ещё и саму врезку
 Func _FilePatched($sPath)
 	Local $sHead = _ReadBytes($sPath, 0, $gc_iPeHeaderSize)
 	If @error Then Return False
-	If _SectionRawByName($sHead, ".hpatch") <> 0 Then Return True
+	If _SectionRawByName($sHead, ".hpatch") <> 0 Or _SectionRawByName($sHead, ".hmark") <> 0 Then Return True
 	If StringRight($sPath, StringLen($gc_sDllName)) <> $gc_sDllName Then Return False
 
 	Local $sHex = _ReadFileHex($sPath)
 	If @error Then Return False
-	Local $iOffset = 0, $iHookRva = 0, $iContinueRva = 0, $iCallRva = 0
-	If Not _FindDllHook($sHex, $iOffset, $iHookRva, $iContinueRva, $iCallRva) Then Return False
-	Return _BytesAt($sHex, $iOffset, 1) = "E9"
+	Local $aHook = _FindDllHook($sHex)
+	If @error Then Return False
+	Return _BytesAt($sHex, $aHook[$gc_iHookAt], 1) = "E9"
 EndFunc   ;==>_FilePatched
 
 
 ; Копия нужна там, где файл уже изменён нами: из неё и делается откат.
 ; Рядом с чистым файлом копия переписывается заново, иначе патч, который всегда
-; накладывается от копии, молча откатил бы обновление игры или мода.
+; накладывается от копии, молча откатил бы обновление игры или мода
 Func _EnsureBackups($sDir)
 	Local $aFiles = _TargetFiles($sDir)
 	For $i = 0 To UBound($aFiles) - 1
 		Local $sBak = _BakPath($aFiles[$i])
 
 		If _FilePatched($aFiles[$i]) Then
-			; без копии оригинал уже не собрать: патч наложен, а взять его неоткуда
+			; Без копии оригинал уже не собрать: патч наложен, а взять его неоткуда
 			If Not FileExists($sBak) Then _
 					Return "Потеряна резервная копия " & _ShortName($aFiles[$i]) & $gc_sBakExt
 			ContinueLoop
@@ -677,14 +884,12 @@ Func _EnsureBackups($sDir)
 EndFunc   ;==>_EnsureBackups
 
 
-; после полного отката копии не нужны: файлы и так оригинальные
+; После полного отката копии не нужны: файлы и так оригинальные
 Func _DeleteBackups($sDir)
 	Local $aFiles = _TargetFiles($sDir)
-	Local $bDeleted = False
 	For $i = 0 To UBound($aFiles) - 1
-		If FileExists(_BakPath($aFiles[$i])) And FileDelete(_BakPath($aFiles[$i])) Then $bDeleted = True
+		FileDelete(_BakPath($aFiles[$i]))
 	Next
-	Return $bDeleted
 EndFunc   ;==>_DeleteBackups
 
 
@@ -708,64 +913,73 @@ EndFunc   ;==>_RestoreFromBackups
 ; Проверка патчей
 ; ==========================================================
 
-; состояние патча в exe определяют полтора десятка байт, их и читаем;
+; Состояние патча в exe определяют полтора десятка байт, их и читаем;
 ; dll приходится читать целиком - место врезки в ней ищется по коду
 
 ; Врезку в dll ищет вызывающий: поиск по мегабайтам стоит дороже всех проверок
 ; вместе взятых, а нужен он и патчу окна, и патчу настроек
-Func _PopupPatchedAt($sHex, $iOffset, $iHookRva, $iContinueRva)
-	If _BytesAt($sHex, $iOffset, 1) <> "E9" Then Return False   ; врезки нет
+Func _PopupPatchedAt($sHex, $aHook)
+	Local $iAt = $aHook[$gc_iHookAt]
+	If _BytesAt($sHex, $iAt, 1) <> "E9" Then Return False   ; врезки нет
 
-	Local $iTarget = $iHookRva + 5 + _GetSDword($sHex, $iOffset + 1)
-	If $iTarget = $iContinueRva Then Return True   ; переход сразу мимо окна
+	Local $iTarget = $aHook[$gc_iHookRva] + 5 + _GetSDword($sHex, $iAt + 1)
+	If $iTarget = $aHook[$gc_iHookContinue] Then Return True   ; переход сразу мимо окна
 
-	; врезка ведёт в нашу секцию - смотрим, какая заглушка туда положена:
-	; окно пропускается только если она уходит на ту же штатную ветку
+	; Врезка ведёт в нашу секцию - смотрим, какая заглушка туда положена:
+	; окно пропускается, только если она уходит на ту же штатную ветку
 	Local $iRaw = _SectionRawByRva($sHex, $iTarget)
-	If $iRaw = 0 Then Return False
-	; между головой и хвостом заглушки лежит адрес процедуры сохранения,
-	; он свой у каждой сборки, поэтому сверяем только сам код вокруг него
-	Local $iLead = Int(StringLen($gc_sDllStubHead) / 2)
-	Local $iTail = Int(StringLen($gc_sDllStubTail) / 2)
-	Local $iHead = $iLead + 4 + $iTail
-	If _BytesAt($sHex, $iRaw, $iLead) <> $gc_sDllStubHead Then Return False
-	If _BytesAt($sHex, $iRaw + $iLead + 4, $iTail) <> $gc_sDllStubTail Then Return False
+	If $iRaw = 0 Or Not _StubAt($sHex, $iRaw) Then Return False
+	Local $iHead = _StubHeadLen()
 	If _BytesAt($sHex, $iRaw + $iHead, 1) <> "E9" Then Return False
-	Return $iTarget + $iHead + 5 + _GetSDword($sHex, $iRaw + $iHead + 1) = $iContinueRva
+	Return $iTarget + $iHead + 5 + _GetSDword($sHex, $iRaw + $iHead + 1) = $aHook[$gc_iHookContinue]
 EndFunc   ;==>_PopupPatchedAt
 
 
-; обе exe несут наш патч и он цел; про dll спрашивают отдельно
-Func _ExePatched($sDir)
+; Наша ли заглушка лежит по смещению. Между головой и хвостом адрес процедуры
+; сохранения, он свой у каждой сборки, поэтому сверяем только код вокруг него
+Func _StubAt($sHex, $iRaw)
+	Local $iLead = Int(StringLen($gc_sDllStubHead) / 2)
+	Return _BytesAt($sHex, $iRaw, $iLead) = $gc_sDllStubHead And _
+			_BytesAt($sHex, $iRaw + $iLead + 4, Int(StringLen($gc_sDllStubTail) / 2)) = $gc_sDllStubTail
+EndFunc   ;==>_StubAt
+
+
+; Голова, адрес процедуры и хвост: дальше заглушки расходятся
+Func _StubHeadLen()
+	Return Int((StringLen($gc_sDllStubHead) + StringLen($gc_sDllStubTail)) / 2) + 4
+EndFunc   ;==>_StubHeadLen
+
+
+; Первая беда с патчем в exe: $bMarks выбирает подсветку, иначе патч настроек.
+; Пустая строка - обе exe несут патч и он цел, про dll спрашивают отдельно
+Func _ExeProblem($sDir, $bMarks)
 	For $i = 0 To UBound($gc_aExeNames) - 1
-		If _ExePatchState($sDir & "\" & $gc_aExeNames[$i]) <> "" Then Return False
+		Local $sPath = $sDir & "\" & $gc_aExeNames[$i]
+		Local $sWhy = $bMarks ? _MarksStateOf("", $sPath) : _ExeStateOf("", $sPath)
+		If $sWhy <> "" Then Return $sWhy
 	Next
-	Return True
-EndFunc   ;==>_ExePatched
+	Return ""
+EndFunc   ;==>_ExeProblem
 
 
-; Что не так с патчем в exe; пустая строка - всё на месте.
+; Что не так с патчем настроек в exe; пустая строка - всё на месте.
 ; Секции мало: она могла лечь, а врезка не встать, поэтому адреса врезок берутся
-; из переходов внутри секции и обе стороны сверяются друг с другом
-Func _ExePatchState($sPath)
-	Return _ExeStateOf("", $sPath, _ShortName($sPath))
-EndFunc   ;==>_ExePatchState
-
-
+; из переходов внутри секции и обе стороны сверяются друг с другом.
 ; Работает и по готовому образу в памяти, и прямо по файлу: при проверке перед
 ; записью образ уже собран, а при опросе состояния тянуть мегабайты незачем
-Func _ExeStateOf($sHex, $sPath, $sName)
+Func _ExeStateOf($sHex, $sPath)
+	Local $sName = _ShortName($sPath)
 	Local $sHead = ($sHex <> "") ? $sHex : _ReadBytes($sPath, 0, $gc_iPeHeaderSize)
 	If @error Then Return "не удалось прочитать " & $sName
 
-	; таблица секций нужна и секции патча, и каждой врезке: разбираем один раз
+	; Таблица секций нужна и секции патча, и каждой врезке: разбираем один раз
 	Local $aSec = _SectionTable($sHead)
 	Local $iRow = _SectionRow($aSec, ".hpatch")
 	If $iRow < 0 Then Return "в " & $sName & " нет секции с кодом патча"
 	Local $iSecRva = $aSec[$iRow][$gc_iSecRva]
 	Local $iRaw = $aSec[$iRow][$gc_iSecRaw]
 
-	; в начале секции лежит имя файла с настройками, по нему и узнаём свой код
+	; В начале секции лежит имя файла с настройками, по нему и узнаём свой код
 	Local $iMark = 16
 	If _Peek($sHex, $sPath, $iRaw, $iMark) <> StringLeft($gc_sExeCode, $iMark * 2) Then _
 			Return "в секции " & $sName & " чужой код"
@@ -787,7 +1001,7 @@ Func _ExeStateOf($sHex, $sPath, $sName)
 EndFunc   ;==>_ExeStateOf
 
 
-; кусок либо из готового образа, либо прямо из файла
+; Кусок либо из готового образа, либо прямо из файла
 Func _Peek($sHex, $sPath, $iAt, $iCount)
 	If $sHex <> "" Then Return _BytesAt($sHex, $iAt, $iCount)
 	Return _ReadBytes($sPath, $iAt, $iCount)
@@ -812,26 +1026,22 @@ EndFunc   ;==>_DllStubState
 
 
 Func _DllStubStateOf($sHex)
-	Local $iOffset = 0, $iHookRva = 0, $iContinueRva = 0, $iCallRva = 0
-	If Not _FindDllHook($sHex, $iOffset, $iHookRva, $iContinueRva, $iCallRva) Then _
-			Return "в " & $gc_sDllName & " не найдено место врезки"
-	Return _DllStubStateAt($sHex, $iOffset, $iHookRva)
+	Local $aHook = _FindDllHook($sHex)
+	If @error Then Return "в " & $gc_sDllName & " не найдено место врезки"
+	Return _DllStubStateAt($sHex, $aHook)
 EndFunc   ;==>_DllStubStateOf
 
 
-; то же, но по уже найденной врезке
-Func _DllStubStateAt($sHex, $iOffset, $iHookRva)
-	If _BytesAt($sHex, $iOffset, 1) <> "E9" Then Return "врезка не встала в " & $gc_sDllName
+; То же, но по уже найденной врезке
+Func _DllStubStateAt($sHex, $aHook)
+	Local $iAt = $aHook[$gc_iHookAt]
+	If _BytesAt($sHex, $iAt, 1) <> "E9" Then Return "врезка не встала в " & $gc_sDllName
 
-	Local $iTarget = $iHookRva + 5 + _GetSDword($sHex, $iOffset + 1)
+	Local $iTarget = $aHook[$gc_iHookRva] + 5 + _GetSDword($sHex, $iAt + 1)
 	Local $iSecRva = _SectionRvaByName($sHex, ".hpatch")
 	If $iSecRva = 0 Or $iTarget <> $iSecRva Then _
 			Return "врезка в " & $gc_sDllName & " ведёт мимо заглушки"
-
-	Local $iRaw = _SectionRawByRva($sHex, $iSecRva)
-	Local $iLead = Int(StringLen($gc_sDllStubHead) / 2)
-	If _BytesAt($sHex, $iRaw, $iLead) <> $gc_sDllStubHead Or _
-			_BytesAt($sHex, $iRaw + $iLead + 4, Int(StringLen($gc_sDllStubTail) / 2)) <> $gc_sDllStubTail Then _
+	If Not _StubAt($sHex, _SectionRawByRva($sHex, $iSecRva)) Then _
 			Return "в секции " & $gc_sDllName & " чужая заглушка"
 	Return ""
 EndFunc   ;==>_DllStubStateAt
@@ -841,14 +1051,29 @@ EndFunc   ;==>_DllStubStateAt
 ; Наложение патчей
 ; ==========================================================
 
-; ниже все функции возвращают описание ошибки или пустую строку
+; Ниже все функции возвращают описание ошибки или пустую строку
 
-Func _PatchExe($sPath)
+; Обе правки exe за одно чтение и одну запись: файл весит мегабайты,
+; а подсветку с настройками обычно ставят вместе
+Func _PatchExeFile($sPath, $bTowns, $bMarks)
+	If Not $bTowns And Not $bMarks Then Return ""
 	Local $sHex = _ReadFileHex($sPath)
 	If @error Then Return "Не удалось прочитать " & _ShortName($sPath)
+
+	Local $sError = ""
+	If $bTowns Then $sError = _PatchExe($sHex, $sPath)
+	; Подсветка встаёт своей секцией за секцией настроек, врезки у них разные
+	If $sError = "" And $bMarks Then $sError = _PatchMarks($sHex, $sPath)
+	If $sError <> "" Then Return $sError
+	Return _WriteFileHex($sPath, $sHex)
+EndFunc   ;==>_PatchExeFile
+
+
+; $sPath нужен только для сообщений: правка идёт по образу в $sHex
+Func _PatchExe(ByRef $sHex, $sPath)
 	Local $iBase = _ImageBase($sHex)
 
-	; всё, что зависит от сборки игры, ищем до того, как трогать файл
+	; Всё, что зависит от сборки игры, ищем до того, как трогать файл
 	Local $aHookRaw[UBound($gc_aExeHooks)], $aHookVa[UBound($gc_aExeHooks)]
 	For $i = 0 To UBound($gc_aExeHooks) - 1
 		Local $iAt = _FindSignature($sHex, $gc_aExeHooks[$i][1])
@@ -862,7 +1087,7 @@ Func _PatchExe($sPath)
 	Local $iScenarioPtr = _GetDword($sHex, $iScen + $gc_iScenarioAt)
 
 	Local $iSectionRva = 0
-	Local $iRaw = _AddSection($sHex, ".hpatch", 0x800, 0, $iSectionRva)
+	Local $iRaw = _AddSection($sHex, ".hpatch", 0x800, $iSectionRva)   ; код секции с запасом
 	If $iRaw = 0 Then Return "Не удалось добавить секцию в " & _ShortName($sPath)
 
 	Local $sCode = _FixupExeCode($sHex, $iBase, $iSectionRva, $iScenarioPtr, $aHookVa)
@@ -876,11 +1101,10 @@ Func _PatchExe($sPath)
 				_RepeatHex("90", $gc_aExeHooks[$i][3] - 5))
 	Next
 
-	; кривой образ на диск не уходит: сверяемся до записи
-	Local $sState = _ExeStateOf($sHex, $sPath, _ShortName($sPath))
+	; Кривой образ на диск не уходит: сверяемся до записи
+	Local $sState = _ExeStateOf($sHex, $sPath)
 	If $sState <> "" Then Return "Патч собран неверно, " & $sState
-
-	Return _WriteFileHex($sPath, $sHex)
+	Return ""
 EndFunc   ;==>_PatchExe
 
 
@@ -924,7 +1148,7 @@ Func _HookVa($sName, ByRef $aHookVa)
 EndFunc   ;==>_HookVa
 
 
-; адрес процедуры сохранения внутри секции exe: её зовёт заглушка в dll
+; Адрес процедуры сохранения внутри секции exe: её зовёт заглушка в dll
 Func _ExeSaveProc($sPath)
 	Local $sHead = _ReadBytes($sPath, 0, $gc_iPeHeaderSize)
 	If @error Then Return 0
@@ -934,59 +1158,183 @@ Func _ExeSaveProc($sPath)
 EndFunc   ;==>_ExeSaveProc
 
 
-Func _PatchDllStub($sPath, $bSkipPopup, $iSaveProc)
+; Заглушку ставит только патч настроек: она зовёт процедуру сохранения из секции exe.
+; Одному патчу окна хватает перехода сразу на штатную ветку. $iSaveProc = 0 - без заглушки
+Func _PatchDll($sPath, $bSkipPopup, $iSaveProc)
 	Local $sHex = _ReadFileHex($sPath)
 	If @error Then Return "Не удалось прочитать " & _ShortName($sPath)
 
-	Local $iOffset = 0, $iHookRva = 0, $iContinueRva = 0, $iCallRva = 0
-	If Not _FindDllHook($sHex, $iOffset, $iHookRva, $iContinueRva, $iCallRva) Then _
-			Return "В " & $gc_sDllName & " не найдено место врезки"
-	If _BytesAt($sHex, $iOffset, 1) <> "E8" Then _
-			Return $gc_sDllName & " уже изменён, нужен оригинал"
+	Local $aHook = _FindDllHook($sHex)
+	If @error Then Return "В " & $gc_sDllName & " не найдено место врезки"
+	Local $iAt = $aHook[$gc_iHookAt], $iHookRva = $aHook[$gc_iHookRva]
+	If _BytesAt($sHex, $iAt, 1) <> "E8" Then Return $gc_sDllName & " уже изменён, нужен оригинал"
+
+	; Ровно пять байт: вытесненный вызов столько и занимал, следующая инструкция цела
+	If $iSaveProc = 0 Then
+		$sHex = _PutBytes($sHex, $iAt, "E9" & _IntToHexLE($aHook[$gc_iHookContinue] - ($iHookRva + 5)))
+		If Not _PopupPatchedAt($sHex, $aHook) Then _
+				Return "Патч собран неверно, переход в " & $gc_sDllName & " ведёт не туда"
+		Return _WriteFileHex($sPath, $sHex)
+	EndIf
 
 	Local $iSectionRva = 0
-	Local $iRaw = _AddSection($sHex, ".hpatch", 0x100, 0, $iSectionRva)
+	Local $iRaw = _AddSection($sHex, ".hpatch", 0x100, $iSectionRva)   ; заглушка с запасом
 	If $iRaw = 0 Then Return "Не удалось добавить секцию в " & $gc_sDllName
 
-	; голова заглушки одна и та же, дальше расходится: с пропуском окна уходим
+	; Голова заглушки одна и та же, дальше расходится: с пропуском окна уходим
 	; на штатную ветку, без него делаем вытесненный вызов и возвращаемся за врезку
-	Local $sPrefix = $gc_sDllStubHead & _IntToHexLE($iSaveProc) & $gc_sDllStubTail
-	Local $iHead = Int(StringLen($sPrefix) / 2)
-	Local $iAfter = $iSectionRva + $iHead
-	Local $sStub = $sPrefix
+	Local $sStub = $gc_sDllStubHead & _IntToHexLE($iSaveProc) & $gc_sDllStubTail
+	Local $iAfter = $iSectionRva + _StubHeadLen()
 	If $bSkipPopup Then
-		$sStub &= "E9" & _IntToHexLE($iContinueRva - ($iAfter + 5))
+		$sStub &= "E9" & _IntToHexLE($aHook[$gc_iHookContinue] - ($iAfter + 5))
 	Else
-		$sStub &= "E8" & _IntToHexLE($iCallRva - ($iAfter + 5))
+		$sStub &= "E8" & _IntToHexLE($aHook[$gc_iHookCall] - ($iAfter + 5))
 		$sStub &= "E9" & _IntToHexLE(($iHookRva + 5) - ($iAfter + 10))
 	EndIf
 
 	$sHex = _PutBytes($sHex, $iRaw, $sStub)
-	; ровно пять байт: вытесненный вызов столько и занимал, следующая инструкция цела
-	$sHex = _PutBytes($sHex, $iOffset, "E9" & _IntToHexLE($iSectionRva - ($iHookRva + 5)))
+	$sHex = _PutBytes($sHex, $iAt, "E9" & _IntToHexLE($iSectionRva - ($iHookRva + 5)))
 
-	Local $sState = _DllStubStateOf($sHex)
+	Local $sState = _DllStubStateAt($sHex, $aHook)
+	If $sState = "" And _PopupPatchedAt($sHex, $aHook) <> $bSkipPopup Then $sState = "пропуск окна собран не так, как просили"
 	If $sState <> "" Then Return "Патч собран неверно, " & $sState
-
 	Return _WriteFileHex($sPath, $sHex)
-EndFunc   ;==>_PatchDllStub
+EndFunc   ;==>_PatchDll
 
 
-Func _PatchDllPopupOnly($sPath)
-	Local $sHex = _ReadFileHex($sPath)
-	If @error Then Return "Не удалось прочитать " & _ShortName($sPath)
+; ==========================================================
+; Подсветка несобранных
+; ==========================================================
 
-	Local $iOffset = 0, $iHookRva = 0, $iContinueRva = 0, $iCallRva = 0
-	If Not _FindDllHook($sHex, $iOffset, $iHookRva, $iContinueRva, $iCallRva) Then _
-			Return "В " & $gc_sDllName & " не найдено место врезки"
-	If _BytesAt($sHex, $iOffset, 1) <> "E8" Then _
-			Return $gc_sDllName & " уже изменён, нужен оригинал"
+; Код подсветки встаёт на оба выхода прохода тумана по клеткам карты: для
+; видимой клетки входа несобранного объекта рисует искры и выходит штатным
+; эпилогом, который сам и вытеснил. Своя секция .hmark, с патчем настроек
+; не пересекается
 
-	$sHex = _PutBytes($sHex, $iOffset, "E9" & _IntToHexLE($iContinueRva - ($iHookRva + 5)))
-	If $iHookRva + 5 + _GetSDword($sHex, $iOffset + 1) <> $iContinueRva Then _
-			Return "Патч собран неверно, переход в " & $gc_sDllName & " ведёт не туда"
-	Return _WriteFileHex($sPath, $sHex)
-EndFunc   ;==>_PatchDllPopupOnly
+Func _PatchMarks(ByRef $sHex, $sPath)
+	Local $iBase = _ImageBase($sHex)
+
+	; Всё, что зависит от сборки игры, ищем до того, как трогать файл
+	Local $oAddr = _MarkAddresses($sHex)
+	If @error Then Return "В " & _ShortName($sPath) & " не найден адрес " & $oAddr
+	Local $aSec = _SectionTable($sHex)
+	Local $iHookLen = Int(StringLen($gc_sMarkHookOrig) / 2)
+	Local $aHookRaw[UBound($gc_aMarkHooks)]
+	For $i = 0 To UBound($gc_aMarkHooks) - 1
+		$aHookRaw[$i] = _RawByRvaIn($aSec, $oAddr[$gc_aMarkHooks[$i]] - $iBase)
+		; Эпилог код секции выполняет сам, поэтому он обязан быть ровно таким
+		If _BytesAt($sHex, $aHookRaw[$i], $iHookLen) <> $gc_sMarkHookOrig Then _
+				Return "В " & _ShortName($sPath) & " на месте врезки подсветки чужой код"
+	Next
+
+	Local $iSectionRva = 0
+	Local $iRaw = _AddSection($sHex, ".hmark", $gc_iMarkSectionSize, $iSectionRva)
+	If $iRaw = 0 Then Return "Не удалось добавить секцию в " & _ShortName($sPath)
+	$sHex = _PutBytes($sHex, $iRaw, _MarkCode($iSectionRva, $oAddr))
+
+	For $i = 0 To UBound($gc_aMarkHooks) - 1
+		Local $iHookVa = $oAddr[$gc_aMarkHooks[$i]]
+		; Адрес врезки остаётся в секции: по нему читается состояние патча
+		$sHex = _PutBytes($sHex, $iRaw + $gc_iMarkHookSlots + $i * 4, _IntToHexLE($iHookVa - $iBase))
+		$sHex = _PutBytes($sHex, $aHookRaw[$i], "E9" & _
+				_IntToHexLE($iBase + $iSectionRva + $gc_iMarkEntry - ($iHookVa + 5)) & _
+				_RepeatHex("90", $iHookLen - 5))
+	Next
+
+	; Кривой образ на диск не уходит: сверяемся до записи
+	Local $sState = _MarksStateOf($sHex, $sPath)
+	If $sState <> "" Then Return "Подсветка собрана неверно, " & $sState
+	Return ""
+EndFunc   ;==>_PatchMarks
+
+
+; Адреса игры для кода подсветки, по именам. Ищутся по коду вокруг них и по
+; импорту: новая сборка игры двигает код, но не переписывает его.
+; При ошибке ставит @error и возвращает имя ненайденного адреса
+Func _MarkAddresses($sHex)
+	Local $oAddr[]
+	Local $iBase = _ImageBase($sHex)
+
+	; Одна сигнатура даёт несколько адресов, поэтому ищем каждую по разу
+	Local $aAt[UBound($gc_aMarkSigs)]
+	For $i = 0 To UBound($gc_aMarkSigs) - 1
+		$aAt[$i] = _FindSignature($sHex, $gc_aMarkSigs[$i])
+	Next
+
+	For $i = 0 To UBound($gc_aMarkAddrs) - 1
+		Local $sName = $gc_aMarkAddrs[$i][0]
+		Local $iSig = $aAt[$gc_aMarkAddrs[$i][1]]
+		If $iSig < 0 Then Return SetError(1, 0, $sName)
+		Local $iRaw = $iSig + $gc_aMarkAddrs[$i][2]
+		Local $iVa = $iBase + _SectionRvaByRaw($sHex, $iRaw)
+		Switch $gc_aMarkAddrs[$i][3]
+			Case "abs"   ; в инструкции лежит сам адрес
+				$oAddr[$sName] = _GetDword($sHex, $iRaw)
+			Case "rel"   ; rel32 вызова считается от конца поля
+				$oAddr[$sName] = $iVa + 4 + _GetSDword($sHex, $iRaw)
+			Case Else    ; нужен адрес самого места
+				$oAddr[$sName] = $iVa
+		EndSwitch
+	Next
+
+	For $i = 0 To UBound($gc_aMarkImports) - 1
+		Local $iSlot = _ImportSlotVa($sHex, $gc_aMarkImports[$i][2], $gc_aMarkImports[$i][1])
+		If $iSlot = 0 Then Return SetError(1, 0, $gc_aMarkImports[$i][2])
+		$oAddr[$gc_aMarkImports[$i][0]] = $iSlot
+	Next
+	Return $oAddr
+EndFunc   ;==>_MarkAddresses
+
+
+; Секция подсветки на её фактическом адресе: куски кода и данных ложатся в нули,
+; ссылки внутрь себя сдвигаются, адреса игры подставляются найденные
+Func _MarkCode($iSectionRva, ByRef $oAddr)
+	Local $sCode = _RepeatHex("00", $gc_iMarkSectionSize)
+	Local $aChunks = _MarkChunks()
+	For $i = 0 To UBound($aChunks) - 1
+		$sCode = _PutBytes($sCode, $aChunks[$i][0], $aChunks[$i][1])
+	Next
+
+	Local $iShift = $iSectionRva - $gc_iMarkSectionRva
+	For $i = 0 To UBound($gc_aMarkSecRefs) - 1
+		Local $iOff = $gc_aMarkSecRefs[$i]
+		$sCode = _PutBytes($sCode, $iOff, _IntToHexLE(_GetDword($sCode, $iOff) + $iShift))
+	Next
+
+	For $i = 0 To UBound($gc_aMarkGameRefs) - 1
+		$sCode = _PutBytes($sCode, $gc_aMarkGameRefs[$i][0], _IntToHexLE($oAddr[$gc_aMarkGameRefs[$i][1]]))
+	Next
+	Return $sCode
+EndFunc   ;==>_MarkCode
+
+
+; Что не так с подсветкой в exe; пустая строка - всё на месте. Адреса врезок
+; лежат в начале секции, по ним сверяем, что переходы ведут в неё.
+; Как и _ExeStateOf, работает и по образу в памяти, и прямо по файлу
+Func _MarksStateOf($sHex, $sPath)
+	Local $sName = _ShortName($sPath)
+	Local $sHead = ($sHex <> "") ? $sHex : _ReadBytes($sPath, 0, $gc_iPeHeaderSize)
+	If @error Then Return "не удалось прочитать " & $sName
+
+	Local $aSec = _SectionTable($sHead)
+	Local $iRow = _SectionRow($aSec, ".hmark")
+	If $iRow < 0 Then Return "в " & $sName & " нет секции подсветки"
+	Local $iSecRva = $aSec[$iRow][$gc_iSecRva]
+	Local $iRaw = $aSec[$iRow][$gc_iSecRaw]
+	If _Peek($sHex, $sPath, $iRaw, Int(StringLen($gc_sMarkId) / 2)) <> $gc_sMarkId Then _
+			Return "в секции подсветки " & $sName & " чужой код"
+
+	For $i = 0 To UBound($gc_aMarkHooks) - 1
+		Local $iHookRva = _DwordOf(_Peek($sHex, $sPath, $iRaw + $gc_iMarkHookSlots + $i * 4, 4))
+		Local $iHookRaw = _RawByRvaIn($aSec, $iHookRva)
+		If $iHookRaw = 0 Then Return "врезка подсветки в " & $sName & " указывает в пустоту"
+		Local $sAt = _Peek($sHex, $sPath, $iHookRaw, 5)
+		If StringLeft($sAt, 2) <> "E9" Then Return "врезка подсветки не встала в " & $sName
+		If $iHookRva + 5 + _SDwordOf(StringTrimLeft($sAt, 2)) <> $iSecRva + $gc_iMarkEntry Then _
+				Return "врезка подсветки в " & $sName & " ведёт не в секцию"
+	Next
+	Return ""
+EndFunc   ;==>_MarksStateOf
 
 
 ; ==========================================================
@@ -1000,46 +1348,23 @@ EndFunc   ;==>_PatchDllPopupOnly
 ;   E8 xx xx xx xx        call <подготовка окна>, сюда и врезаемся
 ;   8D 85 E8 FD FF FF     lea eax, [ebp - 0x218]
 ; Шаг допускает и E9: пропатченный файл находится тем же поиском.
-; Отдаёт смещение врезки, её RVA, RVA штатной ветки и RVA вытесняемого вызова
-Func _FindDllHook($sHex, ByRef $iOffset, ByRef $iHookRva, ByRef $iContinueRva, ByRef $iCallRva)
-	$iOffset = 0
-	; шаг задан парой байт, в шаблон он идёт перечислением: E8 либо E9
-	Local $sStep = ""
-	For $i = 1 To StringLen($gc_sDllSigStep) Step 2
-		$sStep &= ($sStep = "" ? "" : "|") & StringMid($gc_sDllSigStep, $i, 2)
-	Next
-	Local $sPattern = $gc_sDllSigHead & "[0-9A-Fa-f]{8}(?:" & $sStep & ")[0-9A-Fa-f]{8}" & $gc_sDllSigTail
-	Local $iLen = StringLen($gc_sDllSigHead) + 18 + StringLen($gc_sDllSigTail)
+; Отдаёт [смещение врезки, её RVA, RVA штатной ветки, RVA вытесняемого вызова],
+; поля по индексам $gc_iHook*. @error - врезки нет или она не одна
+Func _FindDllHook($sHex)
+	; Шаг задан парой байт, в шаблон он идёт перечислением: E8 либо E9
+	Local $sStep = StringRegExpReplace($gc_sDllSigStep, "(..)(?!$)", "$1|")
+	Local $iFound = _FindSignature($sHex, $gc_sDllSigHead & "????????(?:" & $sStep & ")????????" & $gc_sDllSigTail)
+	If $iFound < 0 Then Return SetError(1, 0, 0)
 
-	Local $iFound = -1, $iPos = 1, $iStep = 0
-	While 1
-		; регулярка только находит кандидата, проверяют его те же побайтные сверки
-		StringRegExp($sHex, $sPattern, $STR_REGEXPARRAYMATCH, $iPos)
-		If @error Then ExitLoop
-		Local $iStart = @extended - $iLen   ; @extended указывает сразу за совпадением
-		$iPos = $iStart + 1
-
-		; совпадение считается только на границе байта: в шестнадцатеричной
-		; строке те же символы попадаются и со сдвигом на полбайта
-		If Mod($iStart, 2) = 1 Then
-			Local $iAt = Int(($iStart - 1) / 2)
-			$iStep = StringInStr($gc_sDllSigStep, _BytesAt($sHex, $iAt + 8, 1), 2)
-			If _BytesAt($sHex, $iAt, 4) = $gc_sDllSigHead And _
-					$iStep > 0 And Mod($iStep, 2) = 1 And _
-					_BytesAt($sHex, $iAt + 13, 6) = $gc_sDllSigTail Then
-				If $iFound >= 0 Then Return False   ; двусмысленно, лучше не трогать
-				$iFound = $iAt
-			EndIf
-		EndIf
-	WEnd
-	If $iFound < 0 Then Return False
-
-	$iOffset = $iFound + 8
-	$iHookRva = _SectionRvaByRaw($sHex, $iOffset)
-	If $iHookRva = 0 Then Return False
-	$iContinueRva = $iHookRva + _GetSDword($sHex, $iFound + 4)
-	$iCallRva = $iHookRva + 5 + _GetSDword($sHex, $iOffset + 1)
-	Return True
+	; rel32 перехода jne лежит сразу за сигнатурой-головой, врезка за ним
+	Local $iJneRel = Int(StringLen($gc_sDllSigHead) / 2)
+	Local $aHook[4]
+	$aHook[$gc_iHookAt] = $iFound + $iJneRel + 4
+	$aHook[$gc_iHookRva] = _SectionRvaByRaw($sHex, $aHook[$gc_iHookAt])
+	If $aHook[$gc_iHookRva] = 0 Then Return SetError(1, 0, 0)
+	$aHook[$gc_iHookContinue] = $aHook[$gc_iHookRva] + _GetSDword($sHex, $iFound + $iJneRel)
+	$aHook[$gc_iHookCall] = $aHook[$gc_iHookRva] + 5 + _GetSDword($sHex, $aHook[$gc_iHookAt] + 1)
+	Return $aHook
 EndFunc   ;==>_FindDllHook
 
 
@@ -1048,8 +1373,8 @@ EndFunc   ;==>_FindDllHook
 ; ==========================================================
 
 ; Добавляет секцию и возвращает её смещение в файле; 0 - не получилось.
-; Найденный адрес уходит в $iNewRva, $iExpectedRva = 0 отключает сверку с ним
-Func _AddSection(ByRef $sHex, $sName, $iSize, $iExpectedRva, ByRef $iNewRva)
+; Её адрес в образе уходит в $iNewRva
+Func _AddSection(ByRef $sHex, $sName, $iSize, ByRef $iNewRva)
 	Local $iPe = _GetDword($sHex, $PE_LFANEW_AT)
 	If _GetDword($sHex, $iPe) <> $PE_SIGNATURE Then Return 0
 
@@ -1059,12 +1384,11 @@ Func _AddSection(ByRef $sHex, $sName, $iSize, $iExpectedRva, ByRef $iNewRva)
 	Local $iSecAlign = _GetDword($sHex, $iOpt + $OPT_SEC_ALIGN)
 	Local $iFileAlign = _GetDword($sHex, $iOpt + $OPT_FILE_ALIGN)
 
-	; новая секция встаёт за последней: её адрес плюс размер в памяти
+	; Новая секция встаёт за последней: её адрес плюс размер в памяти
 	Local $iLast = $iTable + ($iCount - 1) * $ROW_SIZE
 	$iNewRva = _AlignUp(_GetDword($sHex, $iLast + $ROW_RVA) + _GetDword($sHex, $iLast + $ROW_VSIZE), $iSecAlign)
-	If $iExpectedRva <> 0 And $iNewRva <> $iExpectedRva Then Return 0
 
-	; хватает ли в заголовке места под ещё одну запись
+	; Хватает ли в заголовке места под ещё одну запись
 	Local $iFirstRaw = 0x7FFFFFFF
 	For $i = 0 To $iCount - 1
 		Local $iRaw = _GetDword($sHex, $iTable + $i * $ROW_SIZE + $ROW_RAW)
@@ -1077,7 +1401,7 @@ Func _AddSection(ByRef $sHex, $sName, $iSize, $iExpectedRva, ByRef $iNewRva)
 	Local $iNewRaw = _AlignUp($iFileSize, $iFileAlign)
 	Local $iNewRawSize = _AlignUp($iSize, $iFileAlign)
 
-	; хвост записи - перемещения, номера строк и их счётчики, все нулевые
+	; Хвост записи - перемещения, номера строк и их счётчики, все нулевые
 	Local $sHeader = _SectionNameHex($sName)
 	$sHeader &= _IntToHexLE($iSize) & _IntToHexLE($iNewRva) & _IntToHexLE($iNewRawSize) & _IntToHexLE($iNewRaw)
 	$sHeader &= _RepeatHex("00", 12) & _IntToHexLE($SEC_FLAGS_CODE_RWX)
@@ -1113,7 +1437,7 @@ Func _SectionTable($sHex)
 EndFunc   ;==>_SectionTable
 
 
-; строка секции по имени; -1 - такой секции нет
+; Строка секции по имени; -1 - такой секции нет
 Func _SectionRow(ByRef $aSec, $sName)
 	Local $sWant = _SectionNameHex($sName)
 	For $i = 0 To UBound($aSec) - 1
@@ -1123,8 +1447,8 @@ Func _SectionRow(ByRef $aSec, $sName)
 EndFunc   ;==>_SectionRow
 
 
-; смещение в файле по адресу в образе; 0 - адрес вне секций.
-; размер берётся больший из двух: в памяти секция бывает длиннее, чем на диске
+; Смещение в файле по адресу в образе; 0 - адрес вне секций.
+; Размер берётся больший из двух: в памяти секция бывает длиннее, чем на диске
 Func _RawByRvaIn(ByRef $aSec, $iRva)
 	For $i = 0 To UBound($aSec) - 1
 		Local $iSize = $aSec[$i][$gc_iSecVSize]
@@ -1136,7 +1460,7 @@ Func _RawByRvaIn(ByRef $aSec, $iRva)
 EndFunc   ;==>_RawByRvaIn
 
 
-; смещение секции в файле по её начальному адресу; 0 - такой секции нет
+; Смещение секции в файле по её начальному адресу; 0 - такой секции нет
 Func _SectionRawByRva($sHex, $iRva)
 	Local $aSec = _SectionTable($sHex)
 	For $i = 0 To UBound($aSec) - 1
@@ -1151,44 +1475,29 @@ EndFunc   ;==>_SectionRawByRva
 ; ==========================================================
 
 ; Ищет байты, где ?? - любой байт; -1, если совпадений не ровно одно.
-; Регулярка тут только быстрый локатор, решает побайтная сверка в _SignatureAt:
-; проход StringInStr по exe игры стоит около 100 мс, регулярка - около 10
+; Сигнатура идёт в регулярку как есть, поэтому в ней годится и перечисление (?:E8|E9).
+; Проход StringInStr по exe игры стоит около 100 мс, регулярка - около 10
 Func _FindSignature($sHex, $sSig)
 	Local $sPattern = StringReplace($sSig, "??", "[0-9A-Fa-f]{2}")
-	Local $iLen = StringLen($sSig)
 
 	Local $iFound = -1, $iPos = 1
 	While 1
-		StringRegExp($sHex, $sPattern, $STR_REGEXPARRAYMATCH, $iPos)
+		Local $aMatch = StringRegExp($sHex, $sPattern, $STR_REGEXPARRAYMATCH, $iPos)
 		If @error Then ExitLoop
-		Local $iStart = @extended - $iLen   ; @extended указывает сразу за совпадением
+		Local $iStart = @extended - StringLen($aMatch[0])   ; @extended указывает сразу за совпадением
 		$iPos = $iStart + 1
 
-		; совпадение считается только на границе байта: в шестнадцатеричной
+		; Совпадение считается только на границе байта: в шестнадцатеричной
 		; строке те же символы попадаются и со сдвигом на полбайта
 		If Mod($iStart, 2) = 0 Then ContinueLoop
-		Local $iAt = Int(($iStart - 1) / 2)
-		If Not _SignatureAt($sHex, $iAt, $sSig) Then ContinueLoop
 		If $iFound >= 0 Then Return -1
-		$iFound = $iAt
+		$iFound = Int(($iStart - 1) / 2)
 	WEnd
 	Return $iFound
 EndFunc   ;==>_FindSignature
 
 
-Func _SignatureAt($sHex, $iAt, $sSig)
-	Local $iLen = Int(StringLen($sSig) / 2)
-	Local $sGot = _BytesAt($sHex, $iAt, $iLen)
-	If StringLen($sGot) < $iLen * 2 Then Return False
-	For $i = 1 To $iLen * 2 Step 2
-		Local $sWant = StringMid($sSig, $i, 2)
-		If $sWant <> "??" And StringMid($sGot, $i, 2) <> $sWant Then Return False
-	Next
-	Return True
-EndFunc   ;==>_SignatureAt
-
-
-; имя секции в заголовке - восемь байт, добитых нулями
+; Имя секции в заголовке - восемь байт, добитых нулями
 Func _SectionNameHex($sName)
 	Local $sHex = ""
 	For $i = 1 To 8
@@ -1202,8 +1511,8 @@ Func _SectionNameHex($sName)
 EndFunc   ;==>_SectionNameHex
 
 
-; смещение секции в файле по её имени; 0 - такой секции нет.
-; хватает заголовка PE, весь файл читать незачем
+; Смещение секции в файле по её имени; 0 - такой секции нет.
+; Хватает заголовка PE, весь файл читать незачем
 Func _SectionRawByName($sHex, $sName)
 	Local $aSec = _SectionTable($sHex)
 	Local $iRow = _SectionRow($aSec, $sName)
@@ -1218,7 +1527,7 @@ Func _SectionRvaByName($sHex, $sName)
 EndFunc   ;==>_SectionRvaByName
 
 
-; адрес в образе по смещению в файле; 0 - смещение вне секций
+; Адрес в образе по смещению в файле; 0 - смещение вне секций
 Func _SectionRvaByRaw($sHex, $iRaw)
 	Local $aSec = _SectionTable($sHex)
 	For $i = 0 To UBound($aSec) - 1
@@ -1246,16 +1555,16 @@ Func _ReadAsciiz($sHex, $iAt)
 EndFunc   ;==>_ReadAsciiz
 
 
-; Адрес ячейки импорта kernel32 по имени функции; 0 - не нашлась.
+; Адрес ячейки импорта по имени функции; 0 - не нашлась.
 ; В каждой сборке они лежат по-своему, поэтому адрес берётся из таблицы импортов
-Func _ImportSlotVa($sHex, $sFunc)
+Func _ImportSlotVa($sHex, $sFunc, $sDll = "kernel32.dll")
 	Local $iPe = _GetDword($sHex, $PE_LFANEW_AT)
 	Local $iImport = _GetDword($sHex, $iPe + $PE_OPT_AT + $OPT_IMPORT_DIR)
 	If $iImport = 0 Then Return 0
-	; запись импорта: OriginalFirstThunk, TimeDateStamp, ForwarderChain, Name, FirstThunk
+	; Запись импорта: OriginalFirstThunk, TimeDateStamp, ForwarderChain, Name, FirstThunk
 	Local Const $IMP_NAME = 12, $IMP_FIRST_THUNK = 16, $IMP_ROW_SIZE = 20
 
-	; таблица секций нужна на каждое имя в импорте, поэтому разбирается один раз
+	; Таблица секций нужна на каждое имя в импорте, поэтому разбирается один раз
 	Local $aSec = _SectionTable($sHex)
 	Local $iAt = _RawByRvaIn($aSec, $iImport)
 	If $iAt = 0 Then Return 0
@@ -1265,9 +1574,9 @@ Func _ImportSlotVa($sHex, $sFunc)
 		Local $iFirst = _GetDword($sHex, $iAt + $IMP_FIRST_THUNK)
 		If $iNameRva = 0 And $iFirst = 0 Then ExitLoop
 
-		; имя вне секций читать нечем: без проверки _ReadAsciiz пошёл бы от начала файла
+		; Имя вне секций читать нечем: без проверки _ReadAsciiz пошёл бы от начала файла
 		Local $iNameRaw = _RawByRvaIn($aSec, $iNameRva)
-		If $iNameRaw > 0 And StringLower(_ReadAsciiz($sHex, $iNameRaw)) = "kernel32.dll" Then
+		If $iNameRaw > 0 And StringLower(_ReadAsciiz($sHex, $iNameRaw)) = $sDll Then
 			Local $iThunks = _GetDword($sHex, $iAt)
 			If $iThunks = 0 Then $iThunks = $iFirst
 			Local $iRaw = _RawByRvaIn($aSec, $iThunks)
@@ -1275,11 +1584,11 @@ Func _ImportSlotVa($sHex, $sFunc)
 			While $iRaw > 0
 				Local $iEntry = _GetDword($sHex, $iRaw + $i * 4)
 				If $iEntry = 0 Then ExitLoop
-				; старший бит - импорт по номеру, имени нет. Сравниваем с десятичным:
+				; Старший бит - импорт по номеру, имени нет. Сравниваем с десятичным:
 				; литерал 0x80000000 AutoIt считает знаковым
 				If $iEntry < 2147483648 Then
 					Local $iEntryRaw = _RawByRvaIn($aSec, $iEntry)
-					; запись начинается с подсказки в два байта, дальше само имя
+					; Запись начинается с подсказки в два байта, дальше само имя
 					If $iEntryRaw > 0 And _ReadAsciiz($sHex, $iEntryRaw + 2) = $sFunc Then _
 							Return _ImageBase($sHex) + $iFirst + $i * 4
 				EndIf
@@ -1296,7 +1605,7 @@ EndFunc   ;==>_ImportSlotVa
 ; Мелочи
 ; ==========================================================
 
-; в сообщениях об ошибке хватает имени файла: папка у всех одна, она же
+; В сообщениях об ошибке хватает имени файла: папка у всех одна, она же
 ; выбрана в окне выше, а путь целиком только мешает читать
 Func _ShortName($sPath)
 	Local $aParts = StringSplit($sPath, "\")
@@ -1304,14 +1613,17 @@ Func _ShortName($sPath)
 EndFunc   ;==>_ShortName
 
 
-; хвостовой слэш мешает склеивать путь, но у корня диска он часть пути
+; Хвостовой слэш мешает склеивать путь, но у корня диска он часть пути
 Func _TrimSlash($sPath)
 	Return StringRegExpReplace($sPath, "(?<!:)\\+$", "")
 EndFunc   ;==>_TrimSlash
 
 
 Func _GameIsRunning()
-	Return ProcessExists("h3hota HD.exe") Or ProcessExists("h3hota.exe")
+	For $i = 0 To UBound($gc_aExeNames) - 1
+		If ProcessExists($gc_aExeNames[$i]) Then Return True
+	Next
+	Return False
 EndFunc   ;==>_GameIsRunning
 
 
@@ -1320,12 +1632,15 @@ Func _AlignUp($iValue, $iAlign)
 EndFunc   ;==>_AlignUp
 
 
+; Удвоением, а не по одному: секция подсветки - это 45 тысяч нулевых байт,
+; и склейка по кусочку копировала бы растущую строку на каждом шаге
 Func _RepeatHex($sText, $iTimes)
-	Local $s = ""
-	For $i = 1 To $iTimes
-		$s &= $sText
-	Next
-	Return $s
+	If $iTimes <= 0 Then Return ""
+	Local $s = $sText
+	While StringLen($s) < StringLen($sText) * $iTimes
+		$s &= $s
+	WEnd
+	Return StringLeft($s, StringLen($sText) * $iTimes)
 EndFunc   ;==>_RepeatHex
 
 
@@ -1365,7 +1680,7 @@ Func _GetWord($sHex, $iOffset)
 EndFunc   ;==>_GetWord
 
 
-; относительные переходы в коде знаковые, а _GetDword отдаёт беззнаковое
+; Относительные переходы в коде знаковые, а _GetDword отдаёт беззнаковое
 Func _GetSDword($sHex, $iOffset)
 	Return _SDwordOf(_BytesAt($sHex, $iOffset, 4))
 EndFunc   ;==>_GetSDword
@@ -1379,7 +1694,7 @@ Func _IntToHexLE($iValue)
 EndFunc   ;==>_IntToHexLE
 
 
-; кусок файла шестнадцатеричной строкой
+; Кусок файла шестнадцатеричной строкой
 Func _ReadBytes($sPath, $iOffset, $iCount)
 	Local $hFile = FileOpen($sPath, $FO_READ + $FO_BINARY)
 	If $hFile = -1 Then Return SetError(1, 0, "")
@@ -1402,8 +1717,8 @@ EndFunc   ;==>_ReadFileHex
 Func _WriteFileHex($sPath, $sHex)
 	Local $hFile = FileOpen($sPath, $FO_OVERWRITE + $FO_BINARY)
 	If $hFile = -1 Then Return "Не удалось записать " & _ShortName($sPath)
-	FileWrite($hFile, Binary("0x" & $sHex))
+	Local $bOk = FileWrite($hFile, Binary("0x" & $sHex))
 	FileClose($hFile)
-	Return ""
+	Return $bOk ? "" : "Не удалось записать " & _ShortName($sPath)
 EndFunc   ;==>_WriteFileHex
 

@@ -10,3 +10,12 @@ Tools/
 Preview/BuildPreview.ps1
 Preview/BuildHeaderIcon.py
 Docs/
+
+# генератор Marks.gif и наброски подсветки
+Preview/MarkerIdeas/
+Preview/BuildMarkerVariants.py
+Preview/StarBitmap.png
+
+# мусор инструментов
+__pycache__/
+.playwright-mcp/
