@@ -1,14 +1,16 @@
 ﻿; ============================================================
 ; Патчер для Heroes 3: Horn of the Abyss, HotA 1.8.1 + HD mod 5.8
 ;
-; Патч 1. Убирает окно «Турнирные правила», которое HD-мод показывает
-; при каждом нажатии «Начать».
+; Патчи по порядку галочек в окне, сверху вниз.
 ;
-; Патч 2. Запоминает выбранные стартовые город, героя и бонус всех игроков
-; и подставляет их на следующей случайной карте.
-;
-; Патч 3. Подсвечивает на карте несобранные мельницы, водяные колёса,
+; Подсветка. Отмечает на карте несобранные мельницы, водяные колёса,
 ; сады и склады: над ними поднимаются искры цвета ресурса.
+;
+; Настройки новой игры. Запоминает выбранные стартовые город, героя и бонус
+; всех игроков и подставляет их на следующей случайной карте.
+;
+; Окно «Турнирные правила». Убирает его: HD-мод показывает это окно
+; при каждом нажатии «Начать».
 ;
 ; Все патчи трогают только файлы игры и полностью откатываются
 ; восстановлением резервных копий, которые патчер делает сам.
@@ -18,6 +20,7 @@
 #pragma compile(Icon, Assets\Icons\Icon.ico)
 #pragma compile(ProductName, HotAPatcher)
 #pragma compile(FileDescription, Патчер для Heroes 3 HotA)
+; Версия exe, менять здесь вместе с $gc_sAppVer
 #pragma compile(ProductVersion, 1.03)
 #pragma compile(FileVersion, 1.03)
 #pragma compile(LegalCopyright, )
@@ -38,7 +41,8 @@
 #include <WindowsConstants.au3>
 #include "PatchData.au3"
 
-Global Const $gc_sTitle = "HotAPatcher 1.03"
+Global Const $gc_sAppVer = "1.03"
+Global Const $gc_sTitle = "HotAPatcher " & $gc_sAppVer   ; версия также в pragma ProductVersion/FileVersion в шапке
 
 ; Названия патчей на галочках; короткие, чтобы справа в строке влезло состояние.
 ; Подробности - во всплывающей подсказке
@@ -54,6 +58,8 @@ Global Const $gc_sTownsTip = "При создании новой игры на �
 Global Const $gc_sMarksTip = "В игре несобранные мельницы, водяные колёса, сады" & @CRLF & _
 		"и склады не отличить от собранных." & @CRLF & @CRLF & _
 		"После патча над ними поднимаются искры в цвет ресурса."
+Global Const $gc_sOldTip = "Патч поставила прошлая версия патчера." & @CRLF & _
+		"«Применить» заменит его новым."
 
 Global Const $gc_sDllName = "HD_HOTA.dll"
 Global Const $gc_aExeNames[2] = ["h3hota.exe", "h3hota HD.exe"]
@@ -111,6 +117,9 @@ Global $g_idInput, $g_idBrowse, $g_idApply, $g_idPlay, $g_idCancel, $g_idPopup, 
 Global $g_idPopupState, $g_idTownsState, $g_idMarksState, $g_idPathState
 ; Что реально установлено в игре сейчас
 Global $g_bPopupOn = False, $g_bTownsOn = False, $g_bMarksOn = False
+; Патч стоит, но код в секции от прошлой версии патчера: «Применить» его обновит.
+; У патча окна своего кода нет, устареть ему нечему
+Global $g_bTownsOld = False, $g_bMarksOld = False
 ; Патч стоял и был снят на наших глазах: пометка живёт до конца работы патчера
 ; и только для той папки, в которой мы его снимали
 Global $g_bPopupOff = False, $g_bTownsOff = False, $g_bMarksOff = False, $g_sOffDir = ""
@@ -591,38 +600,42 @@ Func _RefreshState()
 	EndIf
 
 	Local $aOn = _InstalledPatches($sDir)
-	_ShowPatches($aOn[0], $aOn[1], $aOn[2])
+	_ShowPatches($aOn[0], $aOn[1], $aOn[2], $aOn[3], $aOn[4])
 	_UpdateButtons()
 EndFunc   ;==>_RefreshState
 
 
-; Что стоит в файлах игры: [окно, настройки, подсветка]. Dll читается и
-; просматривается один раз на оба своих патча: это самая дорогая часть опроса,
-; а место врезки в ней для обоих одно и то же
+; Что стоит в файлах игры: [окно, настройки, подсветка, настройки устарели,
+; подсветка устарела]. Dll читается и просматривается один раз на оба своих патча:
+; это самая дорогая часть опроса, а место врезки в ней для обоих одно и то же
 Func _InstalledPatches($sDir)
-	Local $aOn[3] = [False, False, _ExeProblem($sDir, True) = ""]
+	Local $aOn[5] = [False, False, _ExeProblem($sDir, True) = "", False, False]
+	If $aOn[2] Then $aOn[4] = _ExeOutdated($sDir, True)
 	Local $sDll = _ReadFileHex($sDir & "\" & $gc_sDllName)
 	If @error Then Return $aOn
 	Local $aHook = _FindDllHook($sDll)
 	If @error Then Return $aOn
 	$aOn[0] = _PopupPatchedAt($sDll, $aHook)
 	$aOn[1] = _ExeProblem($sDir, False) = "" And _DllStubStateAt($sDll, $aHook) = ""
+	If $aOn[1] Then $aOn[3] = _ExeOutdated($sDir, False)
 	Return $aOn
 EndFunc   ;==>_InstalledPatches
 
 
 ; Галочки и строки под ними всегда показывают то, что лежит в файлах игры
-Func _ShowPatches($bPopup, $bTowns, $bMarks)
+Func _ShowPatches($bPopup, $bTowns, $bMarks, $bTownsOld = False, $bMarksOld = False)
 	_MarkRemoved(_GameDir(), $bPopup, $bTowns, $bMarks)
 	$g_bPopupOn = $bPopup
 	$g_bTownsOn = $bTowns
 	$g_bMarksOn = $bMarks
+	$g_bTownsOld = $bTownsOld
+	$g_bMarksOld = $bMarksOld
 	GUICtrlSetState($g_idPopup, $bPopup ? $GUI_CHECKED : $GUI_UNCHECKED)
 	GUICtrlSetState($g_idTowns, $bTowns ? $GUI_CHECKED : $GUI_UNCHECKED)
 	GUICtrlSetState($g_idMarks, $bMarks ? $GUI_CHECKED : $GUI_UNCHECKED)
 	_ShowPatchState($g_idPopupState, $bPopup, $g_bPopupOff)
-	_ShowPatchState($g_idTownsState, $bTowns, $g_bTownsOff)
-	_ShowPatchState($g_idMarksState, $bMarks, $g_bMarksOff)
+	_ShowPatchState($g_idTownsState, $bTowns, $g_bTownsOff, $bTownsOld)
+	_ShowPatchState($g_idMarksState, $bMarks, $g_bMarksOff, $bMarksOld)
 EndFunc   ;==>_ShowPatches
 
 
@@ -656,8 +669,10 @@ Func _MarkRemoved($sDir, $bPopup, $bTowns, $bMarks)
 EndFunc   ;==>_MarkRemoved
 
 
-Func _ShowPatchState($idLabel, $bOn, $bOff)
-	If $bOn Then
+Func _ShowPatchState($idLabel, $bOn, $bOff, $bOld = False)
+	If $bOn And $bOld Then
+		_SetState($idLabel, "Патч устарел", $gc_iColorBad, $gc_sOldTip)
+	ElseIf $bOn Then
 		_SetState($idLabel, "✓  Патч установлен", $gc_iColorOk)
 	ElseIf $bOff Then
 		_SetState($idLabel, "Патч снят", $g_iColorMuted)
@@ -668,10 +683,13 @@ EndFunc   ;==>_ShowPatchState
 
 
 ; «Применить» доступна, только если отмеченное расходится с установленным
+; или отмечен патч от прошлой версии патчера
 Func _UpdateButtons()
+	Local $bTowns = (GUICtrlRead($g_idTowns) = $GUI_CHECKED)
+	Local $bMarks = (GUICtrlRead($g_idMarks) = $GUI_CHECKED)
 	Local $bChanged = (GUICtrlRead($g_idPopup) = $GUI_CHECKED) <> $g_bPopupOn Or _
-			(GUICtrlRead($g_idTowns) = $GUI_CHECKED) <> $g_bTownsOn Or _
-			(GUICtrlRead($g_idMarks) = $GUI_CHECKED) <> $g_bMarksOn
+			$bTowns <> $g_bTownsOn Or $bMarks <> $g_bMarksOn Or _
+			($bTowns And $g_bTownsOld) Or ($bMarks And $g_bMarksOld)
 
 	If _DirIsGame(_GameDir()) And $bChanged Then
 		GUICtrlSetState($g_idApply, $GUI_ENABLE)
@@ -692,8 +710,8 @@ Func _DoApply()
 	Local $bTowns = (GUICtrlRead($g_idTowns) = $GUI_CHECKED)
 	Local $bMarks = (GUICtrlRead($g_idMarks) = $GUI_CHECKED)
 	Local $bPopupChanged = ($bPopup <> $g_bPopupOn)
-	Local $bTownsChanged = ($bTowns <> $g_bTownsOn)
-	Local $bMarksChanged = ($bMarks <> $g_bMarksOn)
+	Local $bTownsChanged = ($bTowns <> $g_bTownsOn) Or ($bTowns And $g_bTownsOld)
+	Local $bMarksChanged = ($bMarks <> $g_bMarksOn) Or ($bMarks And $g_bMarksOld)
 
 	_Busy(True)   ; патч занимает около полусекунды, и всё это время окно молчит
 
@@ -711,8 +729,8 @@ Func _DoApply()
 
 	; Галочки могли остаться неотработанными и без явной ошибки: патч мог лечь
 	; наполовину, поэтому итог сверяется с тем, что просили
-	If $sError = "" And ($g_bPopupOn <> $bPopup Or $g_bTownsOn <> $bTowns Or $g_bMarksOn <> $bMarks) Then _
-			$sError = _Mismatch($sDir, $bPopup, $bTowns, $bMarks)
+	If $sError = "" And ($g_bPopupOn <> $bPopup Or $g_bTownsOn <> $bTowns Or $g_bMarksOn <> $bMarks Or _
+			$g_bTownsOld Or $g_bMarksOld) Then $sError = _Mismatch($sDir, $bPopup, $bTowns, $bMarks)
 
 	; После полного отката файлы снова оригинальные, копии хранить незачем
 	If $sError = "" And Not $g_bPopupOn And Not $g_bTownsOn And Not $g_bMarksOn Then _DeleteBackups($sDir)
@@ -753,7 +771,7 @@ Func _Busy($bOn)
 EndFunc   ;==>_Busy
 
 
-; Запускает игру через лаунчер HD-мода: обычные ярлыки ведут туда же.
+; Запускает h3hota HD.exe: в нём встроен загрузчик HD-мода, ярлык игры ведёт туда же.
 ; False - запустить не вышло, причина написана в строке под путём
 Func _LaunchGame()
 	Local $sDir = _GameDir()
@@ -806,6 +824,7 @@ Func _Mismatch($sDir, $bPopup, $bTowns, $bMarks)
 		If $sMarks = "" Then $sMarks = "причина не видна"
 		Return "подсветка не встала, " & $sMarks
 	EndIf
+	If $g_bMarksOld Then Return "в файлах игры осталась подсветка от прошлой версии"
 
 	If $bTowns <> $g_bTownsOn Then
 		If Not $bTowns Then Return "патч настроек остался в файлах игры"
@@ -814,6 +833,7 @@ Func _Mismatch($sDir, $bPopup, $bTowns, $bMarks)
 		If $sWhy = "" Then $sWhy = "причина не видна"
 		Return "патч настроек не встал, " & $sWhy
 	EndIf
+	If $g_bTownsOld Then Return "в файлах игры остался патч настроек от прошлой версии"
 	If Not $bPopup Then Return "патч окна остался в файлах игры"
 	Return "патч окна не встал, окно всё так же показывается"
 EndFunc   ;==>_Mismatch
@@ -962,6 +982,21 @@ Func _ExeProblem($sDir, $bMarks)
 EndFunc   ;==>_ExeProblem
 
 
+; Патч в exe поставила прошлая версия патчера: метка сборки в секции не та.
+; $bMarks выбирает подсветку, иначе патч настроек. Целость патча проверяет _ExeProblem
+Func _ExeOutdated($sDir, $bMarks)
+	Local $sSection = $bMarks ? ".hmark" : ".hpatch"
+	Local $iAt = $bMarks ? $gc_iMarkBuildAt : $gc_iExeBuildAt
+	Local $sBuild = $bMarks ? $gc_sMarkBuild : $gc_sExeBuild
+	For $i = 0 To UBound($gc_aExeNames) - 1
+		Local $sPath = $sDir & "\" & $gc_aExeNames[$i]
+		Local $iRaw = _SectionRawByName(_ReadBytes($sPath, 0, $gc_iPeHeaderSize), $sSection)
+		If $iRaw = 0 Or _ReadBytes($sPath, $iRaw + $iAt, 4) <> $sBuild Then Return True
+	Next
+	Return False
+EndFunc   ;==>_ExeOutdated
+
+
 ; Что не так с патчем настроек в exe; пустая строка - всё на месте.
 ; Секции мало: она могла лечь, а врезка не встать, поэтому адреса врезок берутся
 ; из переходов внутри секции и обе стороны сверяются друг с другом.
@@ -1091,8 +1126,11 @@ Func _PatchExe(ByRef $sHex, $sPath)
 	If $iRaw = 0 Then Return "Не удалось добавить секцию в " & _ShortName($sPath)
 
 	Local $sCode = _FixupExeCode($sHex, $iBase, $iSectionRva, $iScenarioPtr, $aHookVa)
-	If @error Then Return "В " & _ShortName($sPath) & " нет импорта " & $sCode
+	Local $iError = @error
+	If $iError = 1 Then Return "В " & _ShortName($sPath) & " нет импорта " & $sCode
+	If $iError Then Return "Патч собран неверно, правка вне кода секции"
 	$sHex = _PutBytes($sHex, $iRaw, $sCode)
+	If @error Then Return "Патч собран неверно, код не влез в секцию " & _ShortName($sPath)
 
 	For $i = 0 To UBound($gc_aExeHooks) - 1
 		Local $iTarget = $iBase + $iSectionRva + $gc_aExeHooks[$i][4]
@@ -1110,7 +1148,7 @@ EndFunc   ;==>_PatchExe
 
 ; Переносит код секции на её фактический адрес: ссылки внутрь себя сдвигаются,
 ; адреса игры берутся из этой сборки, переходы назад - от найденных врезок.
-; При ошибке ставит @error и возвращает имя ненайденной функции
+; @error 1 - функции нет в импорте, вернёт её имя; 2 - правка вне кода, таблицы с ним разошлись
 Func _FixupExeCode($sHex, $iBase, $iSectionRva, $iScenarioPtr, ByRef $aHookVa)
 	Local $sCode = $gc_sExeCode
 	Local $iShift = $iSectionRva - $gc_iExeSectionRva
@@ -1118,6 +1156,7 @@ Func _FixupExeCode($sHex, $iBase, $iSectionRva, $iScenarioPtr, ByRef $aHookVa)
 	For $i = 0 To UBound($gc_aExeSecRefs) - 1
 		Local $iOff = $gc_aExeSecRefs[$i]
 		$sCode = _PutBytes($sCode, $iOff, _IntToHexLE(_GetDword($sCode, $iOff) + $iShift))
+		If @error Then Return SetError(2, 0, "")
 	Next
 
 	For $i = 0 To UBound($gc_aExeGameRefs) - 1
@@ -1128,6 +1167,7 @@ Func _FixupExeCode($sHex, $iBase, $iSectionRva, $iScenarioPtr, ByRef $aHookVa)
 			If $iAddr = 0 Then Return SetError(1, 0, $sName)
 		EndIf
 		$sCode = _PutBytes($sCode, $gc_aExeGameRefs[$i][0], _IntToHexLE($iAddr))
+		If @error Then Return SetError(2, 0, "")
 	Next
 
 	For $i = 0 To UBound($gc_aExeRelRefs) - 1
@@ -1135,6 +1175,7 @@ Func _FixupExeCode($sHex, $iBase, $iSectionRva, $iScenarioPtr, ByRef $aHookVa)
 		Local $iTarget = _HookVa($gc_aExeRelRefs[$i][1], $aHookVa) + $gc_aExeRelRefs[$i][2]
 		$sCode = _PutBytes($sCode, $iSpot, _
 				_IntToHexLE($iTarget - ($iBase + $iSectionRva + $iSpot + 4)))
+		If @error Then Return SetError(2, 0, "")
 	Next
 	Return $sCode
 EndFunc   ;==>_FixupExeCode
@@ -1230,7 +1271,10 @@ Func _PatchMarks(ByRef $sHex, $sPath)
 	Local $iSectionRva = 0
 	Local $iRaw = _AddSection($sHex, ".hmark", $gc_iMarkSectionSize, $iSectionRva)
 	If $iRaw = 0 Then Return "Не удалось добавить секцию в " & _ShortName($sPath)
-	$sHex = _PutBytes($sHex, $iRaw, _MarkCode($iSectionRva, $oAddr))
+	Local $sCode = _MarkCode($iSectionRva, $oAddr)
+	If @error Then Return "Подсветка собрана неверно, данные вне секции"
+	$sHex = _PutBytes($sHex, $iRaw, $sCode)
+	If @error Then Return "Подсветка собрана неверно, секция не влезла в " & _ShortName($sPath)
 
 	For $i = 0 To UBound($gc_aMarkHooks) - 1
 		Local $iHookVa = $oAddr[$gc_aMarkHooks[$i]]
@@ -1287,22 +1331,26 @@ EndFunc   ;==>_MarkAddresses
 
 
 ; Секция подсветки на её фактическом адресе: куски кода и данных ложатся в нули,
-; ссылки внутрь себя сдвигаются, адреса игры подставляются найденные
+; ссылки внутрь себя сдвигаются, адреса игры подставляются найденные.
+; @error - кусок или правка вне секции, данные разошлись с её размером
 Func _MarkCode($iSectionRva, ByRef $oAddr)
 	Local $sCode = _RepeatHex("00", $gc_iMarkSectionSize)
 	Local $aChunks = _MarkChunks()
 	For $i = 0 To UBound($aChunks) - 1
 		$sCode = _PutBytes($sCode, $aChunks[$i][0], $aChunks[$i][1])
+		If @error Then Return SetError(1, 0, "")
 	Next
 
 	Local $iShift = $iSectionRva - $gc_iMarkSectionRva
 	For $i = 0 To UBound($gc_aMarkSecRefs) - 1
 		Local $iOff = $gc_aMarkSecRefs[$i]
 		$sCode = _PutBytes($sCode, $iOff, _IntToHexLE(_GetDword($sCode, $iOff) + $iShift))
+		If @error Then Return SetError(1, 0, "")
 	Next
 
 	For $i = 0 To UBound($gc_aMarkGameRefs) - 1
 		$sCode = _PutBytes($sCode, $gc_aMarkGameRefs[$i][0], _IntToHexLE($oAddr[$gc_aMarkGameRefs[$i][1]]))
+		If @error Then Return SetError(1, 0, "")
 	Next
 	Return $sCode
 EndFunc   ;==>_MarkCode
@@ -1650,7 +1698,8 @@ EndFunc   ;==>_BytesAt
 
 
 ; @error, если кусок не помещается: иначе он молча уехал бы в хвост строки
-; и образ стал бы длиннее файла, из которого собран
+; и образ стал бы длиннее файла, из которого собран. Код секций проверяет его
+; сразу, а врезки и заглушку ловит сверка образа перед записью на диск
 Func _PutBytes($sHex, $iOffset, $sBytes)
 	If $iOffset < 0 Or $iOffset * 2 + StringLen($sBytes) > StringLen($sHex) Then Return SetError(1, 0, $sHex)
 	Return StringLeft($sHex, $iOffset * 2) & $sBytes & StringMid($sHex, $iOffset * 2 + StringLen($sBytes) + 1)
